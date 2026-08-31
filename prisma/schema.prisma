@@ -1,0 +1,19 @@
+// Studio Class Booking — Prisma schema
+//
+// Phase 1 establishes the datasource and generator only. The business schema
+// (users, members, classes, sessions, bookings, booking_events, and the
+// exclusion / append-only constraints that go with them) lands in Phase 2,
+// where it is introduced together with its first migration.
+//
+// Prisma 7 no longer accepts a connection `url` here: the runtime URL reaches
+// PrismaClient through a driver adapter, and the CLI reads its own from
+// `prisma.config.ts`. See docs/decisions.md.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}

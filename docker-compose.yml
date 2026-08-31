@@ -1,0 +1,23 @@
+# Local Postgres for development and integration tests.
+# Production uses a managed Postgres; this exists so `pnpm db:up` gives you the
+# same major version locally.
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: studio-booking-db
+    environment:
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: studio
+      POSTGRES_DB: studio_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - studio-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U studio -d studio_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  studio-db-data:
