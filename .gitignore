@@ -1,0 +1,23 @@
+node_modules/
+dist/
+build/
+.next/
+target/
+__pycache__/
+venv/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+
+# Prisma client is generated at build time, never committed.
+src/generated/
+
+# Next.js
+next-env.d.ts
+.next/
+
+# Test + tooling output
+coverage/
+*.tsbuildinfo
