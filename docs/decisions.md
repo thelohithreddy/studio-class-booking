@@ -146,3 +146,39 @@ Logged as they happen. Each entry: what was chosen, what was rejected, and why. 
   (b) `citext` — a second extension for what one expression index does.
 - **Trade-off:** no `findUnique({ email })` ergonomics in the client (it cannot see
   expression indexes) — `findFirst` on the normalised value instead.
+
+## Decision 13 — Database-backed opaque-token sessions, not signed cookies
+
+- **Chose:** Login mints a 32-byte cryptographically random token; Postgres stores only its
+  SHA-256 (`auth_sessions`); the browser holds the raw token in an HttpOnly SameSite=Lax
+  cookie; every request resolves identity via one indexed lookup.
+- **Rejected:** Stateless signed session cookies; JWTs (same revocation hole plus algorithm
+  surface, for a single same-origin app); Auth.js (built for OAuth federation — it would own
+  the exact cookie/session semantics this assignment wants demonstrated); Supabase Auth
+  (couples app identity to the database vendor).
+- **Later reversed — this entry reverses Phase 1:** the Phase 1 env inventory reserved
+  `SESSION_COOKIE_SECRET` for cookie signing on the assumption sessions would be stateless.
+  Phase 3's hard requirements — logout must invalidate server-side, sessions must be
+  revocable, "replaying a logged-out session fails" must be a passing test — are
+  unsatisfiable without server state, and once the state exists, signing buys nothing. The
+  secret was deleted from the inventory: opaque random tokens need no signing at all, which
+  is one fewer production secret to provision, rotate, or leak.
+- **Trade-off:** one point-read per authenticated request (indexed, size-independent), and
+  session hygiene becomes our code — swept at login, soft-capped at 10 per user.
+
+## Decision 14 — Argon2id via @node-rs/argon2, parameters pinned
+
+- **Chose:** Argon2id, m=19456 KiB / t=2 / p=1 (OWASP's recommended minimums), behind a
+  two-function boundary (`src/server/auth/password.ts`) nothing else may bypass; verification
+  runs against a dummy hash when the user doesn't exist (measured: median 7.69ms on both
+  paths — enumeration-safe).
+- **Rejected:** bcrypt (72-byte truncation, not memory-hard); `node:crypto` scrypt (viable
+  zero-dependency fallback, documented in case the native module ever fights a deploy
+  target); anything hand-rolled (never).
+- **Why this library:** prebuilt binaries (no node-gyp, no postinstall — pnpm's build-script
+  blocking never engages), and it sits on Next 16's built-in server-externals list, so the
+  bundler leaves it alone without configuration.
+- **Consequence discovered by probing, not reading:** importing its `Algorithm` const enum
+  breaks `next build` under `verbatimModuleSyntax` (TS2748) while vitest passes — a CI-only
+  trap. The boundary file therefore relies on the library's Argon2id default and the unit
+  test pins the `$argon2id$` PHC prefix so a silent default change would fail CI.

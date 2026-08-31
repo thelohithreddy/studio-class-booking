@@ -14,7 +14,7 @@ order is infrastructure → data model → auth → lifecycle → the read-heavy
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------- | ------ |
 | 1   | Scaffold: toolchain, CI, health endpoint, local Postgres                                                                                                              | —                      | 1h       | ~1.5h  |
 | 2   | Schema + migrations + seed skeleton, integration-test harness                                                                                                         | 2, 3 (data), 9 (shape) | 2h       |        |
-| 3   | Auth: sessions, roles, server-side enforcement                                                                                                                        | 1                      | 1.5h     |        |
+| 3   | Auth: identity + session security (Goal 1 partial — per-route role enforcement lands with each feature phase, starting Phase 4)                                       | 1                      | 1.5h     | ~2h    |
 | 4   | Booking lifecycle: book/waitlist/cancel/promote/settle, immutable timeline; named deliverable: the 40-concurrent-bookings race test (capacity 10 → exactly 10 BOOKED) | 4, 9                   | 2.5h     |        |
 | 5   | Classes, sessions, co-instructors UI + instructor visibility                                                                                                          | 2, 3, 5                | 1.5h     |        |
 | 6   | Bookings list (server search/filter/sort/pagination)                                                                                                                  | 6                      | 1.5h     |        |
@@ -58,6 +58,23 @@ reading: an empty-string DIRECT_URL that defeated a `??` chain, and `@updatedAt`
 no DB default (raw-SQL inserts failed NOT NULL). Cut from this phase: the seed skeleton —
 seeding without auth users worth seeding is scaffolding for its own sake; it moves to
 Phase 7 alongside demo data, where it has real content.
+
+### Phase 3 — authentication + session security (done)
+
+Estimated 1.5h, took ~2h. Same shape as Phase 2: full design doc → adversarial panel (two
+hands-on probers + three review lenses + skeptic verification, 13 agents) → implement →
+hostile diff review. The panel changed real things before implementation: login now destroys
+whatever session the browser presented (shift-change on a shared front-desk machine no longer
+strands a valid session nobody holds), rate-limit eviction can't be used to flush a victim's
+bucket, all auth responses carry no-store, and a minimal fallback-safe CSP + production HSTS
+shipped now instead of "later". The probers killed two would-be CI failures before they
+happened: @node-rs/argon2's `Algorithm` const enum breaks `next build` under
+verbatimModuleSyntax (import avoided), and vitest comma-joins multiple Set-Cookie headers
+(single-cookie responses only, asserted via .get()). Delivered: auth_sessions migration,
+password/rate-limit/session/error-taxonomy modules, login/logout/me routes + minimal login
+page, 40 new tests (93 total), full-flow smoke test over real HTTP. Deferred with rationale:
+RBAC (Phase 4 consumes SessionUser.role), demo users (Phase 7 seed), script-src CSP
+(frontend phase).
 
 ## Retrospective (filled at submission)
 

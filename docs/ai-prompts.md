@@ -119,3 +119,57 @@ earlier sed-style doc edits had **silently not applied** because Prettier had re
 the target text — the "amendment recorded in plan.md" claim was false until re-done and
 re-grepped. That last one is the sharpest lesson of the phase: verify that an edit landed,
 not that a script exited zero.
+
+## Phase 3 — authentication, with the same review loop
+
+### Prompt
+
+> PHASE 3 — AUTHENTICATION + SESSION SECURITY. Audit everything first. Evaluate session
+> architectures (server-side sessions, signed cookies, JWT, third-party) and choose the
+> simplest production-grade approach with documented trade-offs. Argon2id or bcrypt. No user
+> enumeration. Server-side logout invalidation. Analyze CSRF, CORS, headers, rate limiting,
+> fixation, expiration — decisions, not hand-waving. Twenty minimum tests plus attack tests.
+> Establish getCurrentUser() for Phase 4. Stop after Phase 3.
+
+(Condensed; the full phase protocol also mandated hostile security review and evidence for
+every claim.)
+
+### What came back
+
+A design doc (DB-backed opaque-token sessions — which reversed the Phase 1 signed-cookie
+assumption and deleted SESSION_COOKIE_SECRET from the env inventory — Argon2id, origin-check
+CSRF model, in-memory rate limiting with honest limits), then a 13-agent panel: two probers
+running the runtime assumptions hands-on, three hostile lenses, skeptic verification of every
+non-minor finding. Then implementation, 93/93 tests, a real-HTTP smoke of the whole flow, and
+a second hostile review of the finished diff.
+
+### What was wrong, and what was done about it
+
+The design the model wrote first had real defects the panel caught before implementation:
+
+- **Login left a stranded valid session on account switch.** "Login always overwrites any
+  cookie present" was browser-side only: the previous account's session row stayed valid for
+  up to 7 days with nobody holding its cookie — routine on a shared front-desk machine.
+  Login now destroys whatever session the request presented; a test pins it.
+- **The written flow rate-limited the RAW email before normalizing it**, so case variants of
+  one address would each get fresh attempt windows. The implementation normalizes inside the
+  zod schema through the same `normalizeEmail` every writer must use; a test drives 11
+  case/whitespace variants into one 429.
+- **The limiter design was an unbounded map keyed on attacker-chosen strings** (an
+  unauthenticated OOM on a 512MB instance), and naive capped eviction would have let a
+  key-flood flush a victim's bucket and reset their counter. The implementation bounds the
+  map and spares limited buckets from eviction (absolute only until every bucket in the map
+  is simultaneously limited, which costs an attacker ~100k Argon2-priced attempts per
+  window); both behaviors unit-tested with mutation-killing assertions.
+- **Probers killed two CI-only traps before they happened:** importing @node-rs/argon2's
+  `Algorithm` const enum fails `next build` under verbatimModuleSyntax while vitest passes
+  (the boundary file relies on the argon2id default; the PHC-prefix unit test pins it), and
+  vitest comma-joins multiple Set-Cookie headers (responses here set exactly one; asserted
+  accordingly).
+- **"Documented" was claimed eight times with no doc deliverable named.** The compliance
+  lens forced the docs list this phase actually shipped (architecture.md's request path,
+  schema.md's auth_sessions, decisions #13/#14, plan row 3 rewording, this entry).
+- One trade-off was made deliberately against a reviewer's suggestion and recorded instead
+  of adopted: a full per-email bucket still blocks even a correct password (15-minute
+  self-healing lockout under sustained attack) — the alternative, verifying through a full
+  bucket, would have let a brute-forcer keep guessing at full speed and learn from 204s.

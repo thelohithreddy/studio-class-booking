@@ -1,8 +1,8 @@
 # Schema
 
-PostgreSQL 17, Prisma 7 (`prisma/schema.prisma` + one migration whose tail is hand-written SQL
-for what the Prisma DSL cannot express). Ten tables — nine domain tables plus Prisma's
-`_prisma_migrations`. All ids are `uuid` with a database-side `gen_random_uuid()` default (raw
+PostgreSQL 17, Prisma 7 (`prisma/schema.prisma` + migrations; the first migration's tail is
+hand-written SQL for what the Prisma DSL cannot express). Eleven tables — nine domain tables,
+`auth_sessions`, plus Prisma's `_prisma_migrations`. All ids are `uuid` with a database-side `gen_random_uuid()` default (raw
 SQL and seeds get ids for free; v4 = unguessable, no enumeration). All timestamps are
 `timestamptz(6)`; `updated_at` additionally has a `now()` DB default because Prisma's
 `@updatedAt` is client-maintained and raw-SQL inserts must not need to know that.
@@ -147,6 +147,21 @@ both; NOTE_ADDED has neither and requires `note`.
 **Immutability**: `BEFORE UPDATE OR DELETE` row trigger + `BEFORE TRUNCATE` statement trigger
 raise exceptions — verified to also catch a cascaded TRUNCATE from a referencing table, and to
 block Prisma's own `.update()`/`.delete()`. Index `(booking_id, seq)` serves timeline reads.
+
+### auth_sessions (Phase 3)
+
+| column     | type                      | notes                                                                                                                                                                                                                                                                                    |
+| ---------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| id         | uuid PK                   |                                                                                                                                                                                                                                                                                          |
+| token_hash | text UNIQUE               | SHA-256 of the 32-byte random cookie token — the raw token never touches the database, so a DB read yields no usable credential. SHA-256 (not Argon2) is correct here: 256 bits of entropy means there is no dictionary to grind, and a slow hash would tax every authenticated request. |
+| user_id    | uuid FK → users, RESTRICT | keeps the one-sanctioned-CASCADE rule; user deletion is not a feature                                                                                                                                                                                                                    |
+| created_at | timestamptz               |                                                                                                                                                                                                                                                                                          |
+| expires_at | timestamptz               | absolute expiry (7 days), indexed lookups happen via token_hash; `(user_id)` indexed for per-user sweeps                                                                                                                                                                                 |
+
+Ephemeral credentials, not history: no immutability machinery, and DELETE is the
+invalidation mechanism (logout, expiry pruning, the 10-per-user soft cap, account-switch on
+login). "Row exists and is unexpired" is the entire definition of a valid session — there is
+deliberately no `revoked_at` second source of truth.
 
 ### membership_alert_dismissals (Goal 10)
 
