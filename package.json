@@ -2,6 +2,7 @@
   "name": "studio-class-booking",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.18.0",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"
