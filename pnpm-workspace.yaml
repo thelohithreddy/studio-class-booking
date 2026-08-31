@@ -1,0 +1,6 @@
+# Prisma and the oxc-based resolver ship native binaries and run install scripts.
+# pnpm blocks those by default; both are first-party build dependencies here.
+allowBuilds:
+  '@prisma/engines': true
+  prisma: true
+  unrs-resolver: true
