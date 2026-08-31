@@ -61,7 +61,15 @@ function violatesOriginPolicy(req: Request): boolean {
   }
 }
 
-type RouteHandler = (req: Request) => Promise<Response> | Response
+/**
+ * Next App Router hands dynamic-segment routes a second argument whose
+ * `params` is a Promise (Next 15+). Handlers that need the id declare their
+ * context shape with RouteContext; static routes ignore the second argument.
+ */
+export type RouteContext<K extends string = string> = { params: Promise<Record<K, string>> }
+
+type RouteHandler<Ctx = unknown> = (req: Request, ctx: Ctx) => Promise<Response> | Response
+type WrappedHandler<Ctx> = (req: Request, ctx?: Ctx) => Promise<Response>
 
 /**
  * Mutating requests get an early size gate: `req.json()` buffers the whole
@@ -74,8 +82,8 @@ type RouteHandler = (req: Request) => Promise<Response> | Response
 const MAX_BODY_BYTES = 64 * 1024
 
 /** Wraps a route handler with the origin guard, size gate and error taxonomy. */
-export function handleRoute(handler: RouteHandler): RouteHandler {
-  return async (req) => {
+export function handleRoute<Ctx = unknown>(handler: RouteHandler<Ctx>): WrappedHandler<Ctx> {
+  return async (req, ctx) => {
     if (violatesOriginPolicy(req)) {
       return jsonError(403, 'origin_mismatch', 'Cross-origin request rejected.')
     }
@@ -88,7 +96,7 @@ export function handleRoute(handler: RouteHandler): RouteHandler {
     }
 
     try {
-      const response = await handler(req)
+      const response = await handler(req, ctx as Ctx)
       // API responses are identity-keyed and must never be cached — not by the
       // browser bfcache (shared front-desk machines), not by intermediaries.
       if (!response.headers.has('Cache-Control')) {

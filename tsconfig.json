@@ -37,5 +37,8 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", ".next", "src/generated"]
+  // Exclude only the noisy parts of .next — NOT the whole directory, or the
+  // `.next/types/**` route validators in `include` would be shadowed and Next's
+  // generated dynamic-route signature checks would silently never run.
+  "exclude": ["node_modules", ".next/cache", ".next/static", "src/generated"]
 }
