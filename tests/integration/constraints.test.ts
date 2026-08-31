@@ -485,6 +485,29 @@ describe('RESTRICT protects history (I11)', () => {
     )
   })
 
+  it('refuses to delete a user with a live auth session', async () => {
+    const userId = await insertUser('session-holder@x.test', 'STAFF')
+    await pool.query(
+      `INSERT INTO auth_sessions (token_hash, user_id, expires_at)
+       VALUES ($2, $1, now() + interval '1 day')`,
+      [userId, 'a'.repeat(64)],
+    )
+    await expect(pool.query(`DELETE FROM users WHERE id = $1`, [userId])).rejects.toThrow(
+      /foreign key|violates/,
+    )
+  })
+
+  it('sanctions exactly one ON DELETE CASCADE in the whole schema', async () => {
+    // docs/schema.md's rule, pinned: only session_instructors.session_id may
+    // cascade. A future FK quietly shipping with CASCADE fails here.
+    const { rows } = await pool.query(`
+      SELECT conname FROM pg_constraint
+      WHERE contype = 'f' AND confdeltype = 'c'
+      ORDER BY conname
+    `)
+    expect(rows.map((r) => r.conname)).toEqual(['session_instructors_session_id_fkey'])
+  })
+
   it('allows deleting a session with no bookings (cascades co-instructor links)', async () => {
     const sessionId = await insertSession({ startsAt: '2026-09-07T10:00:00Z' })
     const coId = await insertUser('co@x.test')

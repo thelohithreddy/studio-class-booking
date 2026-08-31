@@ -32,6 +32,9 @@ export default defineConfig({
           environment: 'node',
           include: ['tests/integration/**/*.test.ts'],
           globalSetup: ['tests/integration/helpers/global-setup.ts'],
+          // Binds the app's lazy db()/env() to the test database inside each
+          // worker, before any test file imports application modules.
+          setupFiles: ['tests/integration/helpers/setup-env.ts'],
           // All integration files share one schema; never run them in parallel.
           fileParallelism: false,
         },

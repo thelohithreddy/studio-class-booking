@@ -93,6 +93,7 @@ export async function truncateAll(pool: Pool): Promise<void> {
     BEGIN
       SET LOCAL session_replication_role = 'replica';
       TRUNCATE TABLE
+        auth_sessions,
         membership_alert_dismissals,
         booking_events,
         bookings,
