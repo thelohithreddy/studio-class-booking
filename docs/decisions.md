@@ -67,3 +67,82 @@ Logged as they happen. Each entry: what was chosen, what was rejected, and why. 
   must answer is "is the process serving requests". Folding Postgres into it turns a transient
   database blip into a restart loop on exactly the class of free-tier infrastructure this will be
   deployed to. Database readiness becomes its own check once there is a schema to check.
+
+## Decision 7 — Members are not users
+
+- **Chose:** A separate `members` table with no credentials; only staff and instructors are
+  `users` with logins.
+- **Rejected:** One `users` table with a MEMBER role.
+- **Why:** No goal gives members a login (self-service booking is an unbuilt stretch idea).
+  Merging would couple membership lifecycle to account lifecycle, force nullable
+  password/role semantics, and complicate every RBAC check — for zero required value. If the
+  stretch goal ever lands, a nullable `members.user_id` FK is an additive migration.
+
+## Decision 8 — Time as instants, with a stored `ends_at` and exclusion constraints
+
+- **Chose:** `starts_at timestamptz` + `duration_minutes` + a _stored_ `ends_at` tied by
+  CHECK, with two GiST exclusion constraints on `tstzrange(starts_at, ends_at, '[)')`
+  (room, primary instructor).
+- **Rejected:** (a) separate date + time-of-day columns — ambiguous across DST, useless for
+  overlap math; (b) a generated `ends_at` column — impossible, index/generation expressions
+  must be IMMUTABLE and `timestamptz + interval` is only STABLE (verified: Postgres rejects
+  it); (c) app-only conflict checking — reviewers reproduced a race that silently
+  double-books; the constraint makes the race lose loudly.
+- **Trade-off:** one denormalised column that a CHECK keeps honest, and `btree_gist` as an
+  extension dependency. Half-open ranges give back-to-back sessions for free.
+- **Consequence:** co-instructor conflicts still need an app-level check (a constraint cannot
+  span the join table) — serialised with per-instructor advisory locks when that service
+  lands.
+
+## Decision 9 — Append-only history by trigger, with an honest threat model
+
+- **Chose:** `booking_events` written by the service in the same transaction as the state
+  change; `BEFORE UPDATE/DELETE/TRUNCATE` triggers make rows physically immutable. Bookings
+  themselves are cancelled, never deleted (delete/truncate triggers + RESTRICT FKs), and
+  their identity columns are frozen by trigger.
+- **Rejected:** (a) a DB trigger auto-writing events from `bookings` updates — loses actor
+  and note context (`actor_user_id NOT NULL` is the point); (b) a two-role privilege model
+  (writer role without UPDATE/DELETE grants) — on the planned free-tier hosts the app user
+  owns the schema, so the grant model would be theatre; documented as the real hardening
+  step for a multi-role deployment.
+- **Why honest:** the docs and SQL say exactly what this stops (every application code path,
+  including raw SQL and Prisma's own update/delete — verified, cascaded TRUNCATE included)
+  and what it does not (a schema owner can drop the trigger). Status flips outside the app
+  are tamper-evident against the ledger, not impossible.
+
+## Decision 10 — A denormalised `booked_count` with a CHECK is the overbooking backstop
+
+- **Chose:** `class_sessions.booked_count int` + `CHECK (booked_count BETWEEN 0 AND capacity)`,
+  maintained by the booking service inside the per-session locked transaction.
+- **Rejected:** My own initial design position — the Phase 2 design doc claimed a capacity
+  backstop was "NOT DB-expressible (COUNT constraint)" and left capacity to the app lock
+  alone.
+- **Later reversed — during adversarial review, before any code was committed:** a review
+  agent disproved the claim empirically (two lock-bypassing concurrent last-seat bookings;
+  the second UPDATE re-evaluated under READ COMMITTED and died on the CHECK). A COUNT can't
+  be constrained; a counter can. Adopted, with a policy side effect we endorse: capacity
+  cannot be edited below the current booked count.
+- **Trade-off:** one more app-maintained invariant (counter == real count) — auditable by a
+  one-line query, and the maintenance UPDATE doubles as the row lock acquisition.
+
+## Decision 11 — Alert dismissals keyed by the dismissed expiry value
+
+- **Chose:** `membership_alert_dismissals (member_id, membership_expires_on)` UNIQUE; an
+  alert shows iff the member's _current_ expiry is in the 7-day window AND no dismissal row
+  matches it. Alerts themselves are never stored.
+- **Rejected:** (a) a mutable `alert_dismissed_at` flag on members — permanently suppresses
+  future cycles, failing Goal 10's required return-after-extension lifecycle; (b) comparing
+  dismissal time vs expiry-update time — works, but is stateful reasoning about clocks where
+  a value match is self-evident and idempotent.
+- **Accepted edge:** re-setting the expiry to a previously-dismissed exact date stays
+  dismissed — that deadline was already acknowledged once.
+
+## Decision 12 — Case-insensitive uniqueness lives in SQL, not in the Prisma DSL
+
+- **Chose:** `UNIQUE INDEX ON (lower(col))` for user/member emails and room names; the PSL
+  `@unique` was dropped from those columns (the app still lowercases before writing).
+- **Rejected:** (a) plain byte-sensitive `@unique` + app normalisation — 'Studio A' and
+  'studio a' become two rooms via any raw-SQL path and overlap detection silently splits;
+  (b) `citext` — a second extension for what one expression index does.
+- **Trade-off:** no `findUnique({ email })` ergonomics in the client (it cannot see
+  expression indexes) — `findFirst` on the normalised value instead.

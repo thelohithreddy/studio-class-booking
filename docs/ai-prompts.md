@@ -50,3 +50,72 @@ could not lint or typecheck itself:
 
 Everything above was caught by running the toolchain, not by reading the diff — which is why the
 verification chain gate exists.
+
+## Phase 2 — schema and migration, with an adversarial review loop
+
+### Prompt
+
+> PHASE 2 — CORE DATABASE + DOMAIN MODEL. Audit the repository first. Design the complete
+> relational model required by ALL future phases (users, members, classes, rooms, sessions,
+> session_instructors, bookings, booking_events, membership alert/dismissal representation)
+> with explicit invariants, database-vs-application rules, constraint/index/migration/test
+> strategy, risks and alternatives — then implement, verify against a real database, inspect
+> the generated SQL, and stop. Do not assume Prisma supports a PostgreSQL feature; verify it.
+
+(Condensed from a much longer phase-execution protocol prompt that also mandated: never
+blindly code, review as a hostile senior engineer, never fake verification.)
+
+### What came back
+
+A full design document (entities, invariants I1–I13, the DB/app rule line, index and
+constraint strategy, migration and integration-test strategy, risks, rejected alternatives) —
+then, before implementation, a 13-agent adversarial review: two probers running the risky
+Prisma 7/Postgres 17 assumptions against real scratch databases, four hostile reviewers
+(database, concurrency, assignment coverage, security), and a skeptic re-verification of
+every non-minor finding.
+
+### What was wrong, and what was done about it
+
+The design the model produced first was wrong in ways the review caught **before commit**:
+
+- **It claimed a database-level capacity backstop was impossible** ("COUNT is not
+  CHECK-expressible") and left overbooking protection to the app lock alone. A review agent
+  disproved this empirically — a denormalised `booked_count` with
+  `CHECK (booked_count <= capacity)` made two lock-bypassing concurrent last-seat bookings
+  fail correctly. Adopted; recorded as the reversal in decisions.md #10.
+- **The planned cancel flow promoted from the waitlist unconditionally** — promoting even
+  when the cancelled booking was WAITLISTED (the brief says only a Booked cancellation
+  promotes) and even into a session whose capacity had been shrunk. The promotion condition
+  is now explicit in the design and docs.
+- **Uniqueness was byte-case-sensitive** — 'Studio A' and 'studio a' would have been two
+  rooms, silently splitting overlap detection. Replaced with `lower()` unique indexes in SQL.
+- **The app-only co-instructor conflict check was shown racy** (two transactions committed a
+  double-booked instructor in the probe). The sessions phase now specifies per-instructor
+  advisory locks; the design doc's "impossible to constrain across the join table" wording
+  was also corrected to "possible but rejected for complexity".
+- One finding was **refuted** by the skeptic pass and rejected: a proposed
+  status-vs-ledger constraint trigger (the only actor able to attempt the attack can also
+  drop the trigger; divergence is already tamper-evident) — kept as a doc clarification only.
+
+Implementation then surfaced two more real bugs that reading had missed, both caught by the
+test run: the harness passed `DIRECT_URL: ''` to the Prisma CLI (an empty string survives the
+`??` fallback chain and then reads as "no URL"), and `@updatedAt` emits **no database
+default**, so every raw-SQL fixture insert died on NOT NULL until `updated_at` got
+`@default(now())` too.
+
+A second hostile-review pass over the finished (still uncommitted) diff caught more, all
+verified before fixing: the db singleton's `: PrismaClient` annotation silently **erased the
+`omit` from the type system** (`user.passwordHash` typechecked as `string` while absent at
+runtime — proven with a probe file that compiled when it should not have); `env()` ran at
+module import, which would have made `next build` require a DATABASE_URL the moment any
+route imports the db (made lazy); the pooling comment repeated Phase-1 folklore —
+node-postgres ignores `pgbouncer=true&connection_limit=1` (pool max stayed 10 in a live
+probe), so the comment and .env.example now say what is actually true; dismissals carried a
+CASCADE the reviewed design had not sanctioned (now RESTRICT, pinned by a test); the
+"every constraint is integration-tested" claim had four untested constraint/trigger arms
+(tests added — including a TRUNCATE test constructed non-vacuously, since a naive
+`TRUNCATE bookings` fails on an FK even without the trigger under test); and two of my
+earlier sed-style doc edits had **silently not applied** because Prettier had reformatted
+the target text — the "amendment recorded in plan.md" claim was false until re-done and
+re-grepped. That last one is the sharpest lesson of the phase: verify that an edit landed,
+not that a script exited zero.
