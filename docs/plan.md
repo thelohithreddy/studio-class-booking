@@ -10,20 +10,23 @@ The ten goals cluster naturally: everything depends on the schema, the booking l
 riskiest single piece, and the dashboard/exports read whatever the earlier phases wrote. So the
 order is infrastructure → data model → auth → lifecycle → the read-heavy features → polish.
 
-| #   | Phase                                                                                                                                                                 | Covers goals           | Estimate | Actual |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------- | ------ |
-| 1   | Scaffold: toolchain, CI, health endpoint, local Postgres                                                                                                              | —                      | 1h       | ~1.5h  |
-| 2   | Schema + migrations + seed skeleton, integration-test harness                                                                                                         | 2, 3 (data), 9 (shape) | 2h       |        |
-| 3   | Auth: identity + session security (Goal 1 partial — per-route role enforcement lands with each feature phase, starting Phase 4)                                       | 1                      | 1.5h     | ~2h    |
-| 4   | Booking lifecycle: book/waitlist/cancel/promote/settle, immutable timeline; named deliverable: the 40-concurrent-bookings race test (capacity 10 → exactly 10 BOOKED) | 4, 9                   | 2.5h     |        |
-| 5   | Classes, sessions, co-instructors UI + instructor visibility                                                                                                          | 2, 3, 5                | 1.5h     |        |
-| 6   | Bookings list (server search/filter/sort/pagination)                                                                                                                  | 6                      | 1.5h     |        |
-| 7   | Recurring generation + CSV export + seed data                                                                                                                         | 7                      | 1.5h     |        |
-| 8   | Dashboard + membership alerts                                                                                                                                         | 8, 10                  | 1.5h     |        |
-| 9   | Deploy, demo data, SUBMISSION.md                                                                                                                                      | —                      | 1h       |        |
+| #   | Phase                                                                                                                                                                 | Covers goals                               | Estimate | Actual |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | -------- | ------ |
+| 1   | Scaffold: toolchain, CI, health endpoint, local Postgres                                                                                                              | —                                          | 1h       | ~1.5h  |
+| 2   | Schema + migrations + seed skeleton, integration-test harness                                                                                                         | 2, 3 (data), 9 (shape)                     | 2h       |        |
+| 3   | Auth: identity + session security (Goal 1 partial — authentication only; enforcement is centralized in Phase 4 and consumed by later phases)                          | 1                                          | 1.5h     | ~2h    |
+| 4   | Server-side authorization: RBAC capability table, resource scope, guards, IDOR/mass-assignment defenses, attack suite                                                 | 1 (enforcement), 5 (visibility foundation) | 1.5h     | ~2.5h  |
+| 5   | Booking lifecycle: book/waitlist/cancel/promote/settle, immutable timeline; named deliverable: the 40-concurrent-bookings race test (capacity 10 → exactly 10 BOOKED) | 4, 9                                       | 2.5h     |        |
+| 6   | Classes, sessions, co-instructors UI + instructor visibility                                                                                                          | 2, 3, 5                                    | 1.5h     |        |
+| 7   | Bookings list (server search/filter/sort/pagination)                                                                                                                  | 6                                          | 1.5h     |        |
+| 8   | Recurring generation + CSV export + seed data                                                                                                                         | 7                                          | 1.5h     |        |
+| 9   | Dashboard + membership alerts                                                                                                                                         | 8, 10                                      | 1.5h     |        |
+| 10  | Deploy, demo data, SUBMISSION.md                                                                                                                                      | —                                          | 1h       |        |
 
-Sum of estimates is ~14h against a 12h budget, which is the honest way round: phases 5–8 each have
-an obvious "smaller but still correct" version to fall back to, the lifecycle in phase 4 does not.
+Authorization was pulled forward into its own phase (originally folded into the feature phases)
+because the execution protocol treats it as a security foundation the feature phases build on —
+the safer order. Sum of estimates is ~15h against a 12h budget: the feature phases each have an
+obvious "smaller but still correct" fallback, the lifecycle in phase 5 does not.
 
 ## Phase log
 
@@ -75,6 +78,27 @@ password/rate-limit/session/error-taxonomy modules, login/logout/me routes + min
 page, 40 new tests (93 total), full-flow smoke test over real HTTP. Deferred with rationale:
 RBAC (Phase 4 consumes SessionUser.role), demo users (Phase 7 seed), script-src CSP
 (frontend phase).
+
+### Phase 4 — server-side authorization (done)
+
+Estimated 1.5h, took ~2.5h. Same protocol: design doc → adversarial panel (a hands-on Next
+16/Prisma prober + three review lenses + skeptic verification) → implement → hostile diff
+review. The panel moved real things before code: the capability/scope/guard split held up,
+but the reused handleRoute was single-argument and could not thread a dynamic route's id to
+the guards — fixed by making it generic over ctx (two lenses raised this independently). The
+prober earned its keep twice: it proved the scoped OR-query is one SQL statement with an
+EXISTS semi-join (no N+1) and that the count under the same fragment cannot leak, and it
+found that the tsconfig `.next` exclude was silently shadowing the `.next/types/**` route
+validators — so a wrong dynamic-route signature built clean. Narrowing the exclude turned
+that safety net back on (verified: a mismatched param key now fails the build). Also hardened
+beyond the brief: bookingScopeWhere is derived from sessionScopeWhere so Goal 6's future
+scoped count is non-leaking by construction, not convention. Delivered: no migration (the
+schema already carried role, primary_instructor_id, session_instructors and the indexes), the
+three authorization modules, 3 read endpoints (a scoped session list + scoped session read +
+a staff-only members read) and 15 guarded 501 handlers across 13 route files, and 40 new tests
+(143 total) covering the full attack matrix — IDOR 404-equality, relationship revocation,
+count non-leak, malformed-uuid-not-500, role/param tampering, and a property sweep asserting
+each instructor's visible set equals their DB-derived related set.
 
 ## Retrospective (filled at submission)
 

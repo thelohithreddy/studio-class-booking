@@ -244,6 +244,17 @@ BigInt JSON friction; (4) the GiST exclusion indexes grow with future sessions b
 stay range-bounded. The booking hot path itself (per-session row lock + `(session_id, status,
 seq)` index) is size-independent per session and does not degrade with global table growth.
 
+## Authorization uses this schema unchanged (Phase 4)
+
+Phase 4 added no tables or columns: server-side authorization reads what Phase 2 already
+modelled. `users.role` gates management verbs; `class_sessions.primary_instructor_id` plus the
+`session_instructors(session_id, instructor_id)` join express an instructor's visible scope
+(`primary OR co-instructor`), and that scope compiles to a single query with an EXISTS
+semi-join over the `session_instructors(instructor_id)` index and the
+`class_sessions(primary_instructor_id, …)` index — both from Phase 2. The same `WHERE`
+fragment feeds reads, collections and counts, so a scoped total cannot report rows the viewer
+may not see. See docs/architecture.md for the guard/policy/scope architecture.
+
 ## Prisma-specific facts this schema relies on (verified hands-on)
 
 - Prisma 7 diffing **ignores** the hand-written objects (extension, CHECKs, exclusions,

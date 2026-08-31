@@ -182,3 +182,54 @@ Logged as they happen. Each entry: what was chosen, what was rejected, and why. 
   breaks `next build` under `verbatimModuleSyntax` (TS2748) while vitest passes — a CI-only
   trap. The boundary file therefore relies on the library's Argon2id default and the unit
   test pins the `$argon2id$` PHC prefix so a silent default change would fail CI.
+
+## Decision 15 — Capability table + scope fragment + guards, not scattered role checks
+
+- **Chose:** A three-part authorization architecture in `src/server/authorization/`: a
+  declarative capability→roles table (`policy.ts`, `can()` pure and fail-closed), resource
+  scope as a shared Prisma `WHERE` builder (`scope.ts`), and composable throwing guards
+  (`guards.ts`). Every future mutating endpoint ships now as guard + 501.
+- **Rejected:** (a) `if (user.role === 'STAFF')` at each route — unauditable, easy to forget,
+  impossible to snapshot-test; (b) a general policy engine / CASL-style ability framework —
+  security theater for two roles and one relationship, and a dependency to explain; (c)
+  Next.js middleware as the boundary — middleware is UX/routing, not authorization; a direct
+  API call must be denied by the handler itself.
+- **Why:** the brief demands enforcement "on the server, not just hidden in the interface,"
+  and that it be explainable. A table where every management verb is visibly `['STAFF']`
+  answers "why is this denied" by construction, and a scope fragment that travels into the
+  query means the authorization predicate and the data fetch are the same operation —
+  unauthorized rows are never read, and a scoped count cannot leak.
+- **Trade-off:** the capability enum lists verbs whose endpoints do not exist yet (they are
+  guarded 501 stubs). That is deliberate — the alternative is a declared-but-unguarded verb,
+  the exact latent gap review flagged.
+
+## Decision 16 — 404 (not 403) for out-of-scope resources; 403 for role-forbidden verbs
+
+- **Chose:** An ID-addressed resource the caller lacks a relationship to returns **404**,
+  byte-identical to a genuinely missing row (and to a malformed id). A role-forbidden _verb_
+  returns **403**.
+- **Rejected:** 403 everywhere — it would confirm "session X exists" to any authenticated
+  instructor probing ids, which combined with sequential-ish reasoning is an enumeration
+  oracle even over uuids; and 404 everywhere — it would wrongly imply a staff-only endpoint
+  does not exist, when its existence is already public in the app's own JavaScript.
+- **Why:** hide what is sensitive (which specific resources exist and who relates to them),
+  don't bother hiding what isn't (that a `/dashboard` endpoint exists at all). The split is
+  drawn on "does the status leak something the attacker couldn't already know."
+- **Consequence:** `requireSessionView` validates the uuid first (a non-uuid can't name a
+  row, and it also stops Prisma's invalid-uuid error — P2007 on the pg adapter — from
+  surfacing as a 500), then queries with the scope fragment ANDed in.
+
+## Decision 17 — attendance export and studio dashboard are permanently staff-only
+
+- **Chose:** `attendance:export` (CSV) and `dashboard:studio` are flat, staff-only
+  capabilities — instructors get 403 regardless of session relationship.
+- **Rejected:** modeling attendance export as resource-scoped now (instructor may export
+  their own session's CSV).
+- **Why:** the dashboard's headline numbers are studio-wide by Goal 8's own wording, and the
+  CSV sits under Goal 7 (a staff bulk feature) and exposes member PII plus booking status —
+  staff territory. Reading the brief as staff-only is the honest interpretation.
+- **Consequence — recorded so a future reversal is a visible decision:** if a later
+  requirement grants instructors a scoped dashboard or self-session export, those endpoints
+  migrate from `requireCapability` to `requireSessionView` + a capability (the resource-
+  scoped shape), and the Phase-4 instructor→403 tests reverse. That is a deliberate
+  re-architecture, not a flag flip.

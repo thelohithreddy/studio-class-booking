@@ -173,3 +173,46 @@ The design the model wrote first had real defects the panel caught before implem
   of adopted: a full per-email bucket still blocks even a correct password (15-minute
   self-healing lockout under sustained attack) — the alternative, verifying through a full
   bucket, would have let a brute-forcer keep guessing at full speed and learn from 204s.
+
+## Phase 4 — server-side authorization
+
+### Prompt
+
+> PHASE 4 — SERVER-SIDE AUTHORIZATION (RBAC + resource authorization). The UI is not a
+> security boundary; assume the reviewer attacks the API directly. Central role authorization,
+> resource-level scoping (instructor sees only sessions where primary or co-instructor), IDOR
+> defense, mass-assignment protection, fail-closed, deliberate 401/403/404 semantics. Do not
+> implement business workflows — establish the authorization architecture and prove it. 29
+> mandatory attack tests plus property-based invariants. Stop after Phase 4.
+
+### What came back
+
+A design doc (capability table + scope-as-query-fragment + composable guards + guarded 501
+stubs for every future mutation), then the adversarial panel: a hands-on Next 16/Prisma
+prober and three hostile lenses (pentester, authz-code, phase-compliance) with skeptic
+verification.
+
+### What was wrong, and what was done about it
+
+- **The reused `handleRoute` was single-argument** and could not pass a dynamic route's
+  `[id]` to the guards — every id-addressed IDOR protection depended on it. Two lenses raised
+  it independently; fixed by making `handleRoute` generic over `ctx` (the returned wrapper
+  keeps `ctx` optional so Phase-3 single-arg routes and tests are untouched). The skeptic
+  verifiers then _refuted_ the finding as already-fixed, because they ran against the
+  working tree after the edit — a nice demonstration that the loop tracks the live code.
+- **The prober found the tsconfig `.next` exclude was silently shadowing the
+  `.next/types/**` route validators**, so a wrong dynamic-route signature (missing `Promise`,
+  mismatched param key) built and type-checked clean — the exact safety net the design
+  claimed. Narrowing the exclude turned it back on; verified by temporarily breaking a route
+  to `RouteContext<'wrongkey'>` and watching `tsc` reject it against Next's generated
+  validator (TS2344).
+- **The design cited P2023 for an invalid-uuid Prisma error; it is actually P2007** on the
+  pg adapter (7.10). The mitigation (zod-validate the uuid → 404 before Prisma) works either
+  way; the doc comment was corrected for honesty.
+- **`bookingScopeWhere` didn't exist yet** — the design claimed the count-non-leak property
+  was structural but had only one scope builder. Added `bookingScopeWhere = { session:
+sessionScopeWhere(user) }`, derived (not hand-copied) from the session rule, so Goal 6's
+  future booking search inherits non-leaking counts by construction.
+- Judgment call recorded rather than deferred: the panel asked whether attendance export /
+  dashboard should be resource-scoped for instructors. Decided permanently staff-only
+  (decisions.md #17) with the migration path documented — the honest reading of Goals 7/8.
