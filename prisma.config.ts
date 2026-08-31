@@ -17,7 +17,13 @@ import { defineConfig } from 'prisma/config'
  * Commands that genuinely need a connection (migrate, studio) get Prisma's
  * own "no datasource URL" error, which names the missing variable.
  */
-const migrationUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL
+// Blank counts as absent: a created-but-empty DIRECT_URL in a deploy
+// dashboard must fall through to DATABASE_URL, not erase the datasource.
+function pick(value: string | undefined): string | undefined {
+  return value && value.trim() !== '' ? value : undefined
+}
+
+const migrationUrl = pick(process.env.DIRECT_URL) ?? pick(process.env.DATABASE_URL)
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',

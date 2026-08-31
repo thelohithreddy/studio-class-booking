@@ -49,8 +49,9 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  primarySessions   ClassSession[]              @relation("PrimaryInstructor")
+  primarySessions   ClassSession[]             @relation("PrimaryInstructor")
   coInstructorLinks SessionInstructor[]
+  authSessions      AuthSession[]
   bookingEvents     BookingEvent[]
   alertDismissals   MembershipAlertDismissal[]
 
@@ -215,4 +216,21 @@ model MembershipAlertDismissal {
 
   @@unique([memberId, membershipExpiresOn])
   @@map("membership_alert_dismissals")
+}
+/// DB-backed auth sessions (Phase 3). The cookie carries a 32-byte random
+/// token; only its SHA-256 lands here, so a database read yields no usable
+/// credential. Absolute expiry, no idle timeout; logout deletes the row.
+/// Ephemeral credentials, not history — no immutability machinery, and
+/// Restrict (not Cascade) keeps the schema's one-sanctioned-CASCADE rule.
+model AuthSession {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash String   @unique @map("token_hash")
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@map("auth_sessions")
 }
