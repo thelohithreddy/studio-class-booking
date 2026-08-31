@@ -1,13 +1,14 @@
 // Studio Class Booking — Prisma schema
 //
-// Phase 1 establishes the datasource and generator only. The business schema
-// (users, members, classes, sessions, bookings, booking_events, and the
-// exclusion / append-only constraints that go with them) lands in Phase 2,
-// where it is introduced together with its first migration.
+// Prisma 7: no connection `url` here — the CLI reads prisma.config.ts and the
+// runtime constructs PrismaClient over a pg driver adapter (src/lib/db.ts).
 //
-// Prisma 7 no longer accepts a connection `url` here: the runtime URL reaches
-// PrismaClient through a driver adapter, and the CLI reads its own from
-// `prisma.config.ts`. See docs/decisions.md.
+// The Prisma DSL cannot express everything this schema relies on. The initial
+// migration hand-adds, in SQL: CHECK constraints, two GiST exclusion
+// constraints (room / primary-instructor overlap), a partial unique index
+// (one active booking per member+session), and the triggers that make
+// booking_events append-only and freeze booking identity columns.
+// docs/schema.md is the complete inventory of both layers.
 
 generator client {
   provider = "prisma-client"
@@ -16,4 +17,202 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+enum UserRole {
+  STAFF
+  INSTRUCTOR
+}
+
+enum BookingStatus {
+  BOOKED
+  WAITLISTED
+  CANCELLED
+  ATTENDED
+  NO_SHOW
+}
+
+enum BookingEventType {
+  CREATED
+  STATUS_CHANGED
+  NOTE_ADDED
+}
+
+/// Staff and instructor accounts. Members are deliberately NOT users — they
+/// have no login in this system (self-service booking is an unbuilt stretch).
+model User {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String // unique case-insensitively: lower(email) index in migration SQL
+  name         String
+  role         UserRole
+  passwordHash String   @map("password_hash") // set at creation; auth logic lands in Phase 3
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  primarySessions   ClassSession[]              @relation("PrimaryInstructor")
+  coInstructorLinks SessionInstructor[]
+  bookingEvents     BookingEvent[]
+  alertDismissals   MembershipAlertDismissal[]
+
+  @@map("users")
+}
+
+model Member {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String
+  email               String // unique case-insensitively: lower(email) index in migration SQL
+  membershipExpiresOn DateTime @map("membership_expires_on") @db.Date
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  bookings        Booking[]
+  alertDismissals MembershipAlertDismissal[]
+
+  @@index([membershipExpiresOn]) // alerts scan: expiry within 7 days or past
+  @@map("members")
+}
+
+/// Rooms are an entity, not a string on sessions: conflict detection keyed on
+/// a free-text name would silently miss on a typo.
+model Room {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String // unique case-insensitively: lower(name) index in migration SQL — 'Studio A' vs 'studio a' must be ONE room or conflict detection silently splits
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sessions ClassSession[]
+
+  @@map("rooms")
+}
+
+model Class {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title                  String
+  description            String
+  discipline             String // free text — the studio defines its own disciplines
+  defaultDurationMinutes Int       @map("default_duration_minutes")
+  defaultCapacity        Int       @map("default_capacity")
+  archivedAt             DateTime? @map("archived_at") @db.Timestamptz(6) // null = active
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sessions ClassSession[]
+
+  @@map("classes")
+}
+
+/// One scheduled occurrence of a class. `durationMinutes` and `capacity` are
+/// copied from the class defaults at creation and overridable per session.
+/// `endsAt` is stored (not generated: index expressions must be IMMUTABLE and
+/// timestamptz + interval is only STABLE) and CHECK-tied to starts+duration;
+/// the exclusion constraints build tstzrange(starts_at, ends_at, '[)') on it.
+model ClassSession {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  classId             String   @map("class_id") @db.Uuid
+  startsAt            DateTime @map("starts_at") @db.Timestamptz(6)
+  durationMinutes     Int      @map("duration_minutes")
+  endsAt              DateTime @map("ends_at") @db.Timestamptz(6)
+  capacity            Int
+  /// Denormalized count of BOOKED bookings, maintained by the booking service
+  /// inside the per-session locked transaction. CHECK-bounded by capacity in
+  /// the migration SQL — the hard backstop that makes an 11th booking on a
+  /// 10-seat session lose at the database even if app locking ever breaks.
+  bookedCount         Int      @default(0) @map("booked_count")
+  primaryInstructorId String   @map("primary_instructor_id") @db.Uuid
+  roomId              String   @map("room_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  class             Class               @relation(fields: [classId], references: [id], onDelete: Restrict)
+  primaryInstructor User                @relation("PrimaryInstructor", fields: [primaryInstructorId], references: [id], onDelete: Restrict)
+  room              Room                @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  coInstructors     SessionInstructor[]
+  bookings          Booking[]
+
+  @@index([classId, startsAt]) // class detail: its sessions in time order
+  @@index([primaryInstructorId, startsAt]) // instructor "my sessions" + conflict pre-checks
+  @@index([startsAt]) // dashboard "today" windows
+  @@map("class_sessions")
+}
+
+/// Co-instructors: many-to-many. The primary instructor must not also appear
+/// here for the same session (app rule — CHECK cannot see across tables).
+model SessionInstructor {
+  sessionId    String   @map("session_id") @db.Uuid
+  instructorId String   @map("instructor_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  session    ClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  instructor User         @relation(fields: [instructorId], references: [id], onDelete: Restrict)
+
+  @@id([sessionId, instructorId])
+  @@index([instructorId]) // reverse lookup: sessions where I co-teach
+  @@map("session_instructors")
+}
+
+/// `seq` (SERIAL) is the deterministic waitlist order — "earliest waitlisted"
+/// means min(seq), not min(created_at): timestamps collide under concurrency.
+/// A partial unique index (migration SQL) allows only one BOOKED/WAITLISTED
+/// row per (member, session); rebooking after cancellation stays legal.
+model Booking {
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  seq       Int           @unique @default(autoincrement())
+  sessionId String        @map("session_id") @db.Uuid
+  memberId  String        @map("member_id") @db.Uuid
+  status    BookingStatus
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(6) // the "booked at" time
+  updatedAt DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  session ClassSession   @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  member  Member         @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  events  BookingEvent[]
+
+  @@index([sessionId, status, seq]) // capacity count + earliest-waitlisted scan
+  @@index([memberId])
+  @@index([status, createdAt]) // status-filtered list, sorted
+  @@index([createdAt]) // default booked-time sort
+  @@map("bookings")
+}
+
+/// Append-only timeline (Goal 9). Rows are physically immutable: triggers in
+/// the migration reject UPDATE, DELETE and TRUNCATE. `seq` totally orders a
+/// booking's timeline (same-transaction events share created_at). Actor is
+/// always the authenticated user who caused the event — an automatic waitlist
+/// promotion is attributed to the user whose cancellation triggered it.
+model BookingEvent {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  seq         Int              @unique @default(autoincrement())
+  bookingId   String           @map("booking_id") @db.Uuid
+  type        BookingEventType
+  fromStatus  BookingStatus?   @map("from_status")
+  toStatus    BookingStatus?   @map("to_status")
+  note        String?
+  actorUserId String           @map("actor_user_id") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  actor   User    @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId, seq]) // one booking's timeline in order
+  @@map("booking_events")
+}
+
+/// Goal 10: an alert is DERIVED (expiry within 7 days or past), never stored.
+/// A dismissal records the exact expiry value it silenced; change the expiry
+/// and the pair no longer matches, so the alert returns when the new date
+/// enters the window. Unique pair makes dismissal idempotent. Restrict on
+/// member deliberately: one sanctioned CASCADE in this schema (co-instructor
+/// links); everything else fails loudly rather than vanishing silently.
+model MembershipAlertDismissal {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId            String   @map("member_id") @db.Uuid
+  membershipExpiresOn DateTime @map("membership_expires_on") @db.Date
+  dismissedById       String   @map("dismissed_by_id") @db.Uuid
+  dismissedAt         DateTime @default(now()) @map("dismissed_at") @db.Timestamptz(6)
+
+  member      Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  dismissedBy User   @relation(fields: [dismissedById], references: [id], onDelete: Restrict)
+
+  @@unique([memberId, membershipExpiresOn])
+  @@map("membership_alert_dismissals")
 }
