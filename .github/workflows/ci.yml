@@ -14,8 +14,30 @@ jobs:
     name: Lint, typecheck, test, build
     runs-on: ubuntu-latest
 
-    # No database service yet: Phase 1 has only unit tests. The Postgres
-    # service container arrives with the first integration test in Phase 2.
+    # The integration suite migrates and tests against a real Postgres —
+    # same major version as docker-compose.yml and production.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: studio
+          POSTGRES_PASSWORD: studio
+          POSTGRES_DB: studio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U studio -d studio_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # The harness uses TEST_DATABASE_URL verbatim (and refuses any database
+      # whose name does not end in "test"); DATABASE_URL is what the spawned
+      # prisma CLI and any future app-level steps read.
+      DATABASE_URL: postgresql://studio:studio@localhost:5432/studio_test?schema=public
+      TEST_DATABASE_URL: postgresql://studio:studio@localhost:5432/studio_test?schema=public
+
     steps:
       - uses: actions/checkout@v5
 
