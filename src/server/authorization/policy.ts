@@ -19,6 +19,7 @@ export type Capability =
   | 'class:manage'
   | 'session:manage'
   | 'member:manage'
+  | 'room:manage'
   | 'booking:manage'
   | 'coinstructor:manage'
   | 'recurring:generate'
@@ -30,6 +31,7 @@ const CAPABILITY_ROLES: Record<Capability, readonly UserRole[]> = {
   'class:manage': ['STAFF'],
   'session:manage': ['STAFF'],
   'member:manage': ['STAFF'],
+  'room:manage': ['STAFF'],
   'booking:manage': ['STAFF'],
   'coinstructor:manage': ['STAFF'],
   'recurring:generate': ['STAFF'],
