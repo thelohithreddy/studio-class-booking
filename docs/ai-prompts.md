@@ -504,3 +504,45 @@ landing page + accessible view, and added 17 tests (393 total).
   marked `aria-hidden` with the data table as the accessible source; an "as of <studio-local>"
   caption and an explicit all-zero-chart note; and the UI bar-scaling guarded so an all-zero chart
   never yields NaN. EXPLAIN ANALYZE (real, ~1500 bookings, <1 ms) confirmed no new index is warranted.
+
+## Phase 11 — membership expiry alerts (Goal 10)
+
+### Prompt
+
+> PHASE 11 — PRODUCTION-GRADE MEMBERSHIP EXPIRY ALERTS. Implement ONLY Goal 10. Read the assignment;
+> extract the exact requirement. PRESERVE the existing membership_alert_dismissals design (dismissal
+> keyed to the dismissed expiry value — extension re-eligibilises). Determine exact alert semantics
+> (who, threshold, inclusive?, expired?, timezone, lifecycle, dismissal, idempotency, concurrency).
+> Dynamic vs persisted; no unnecessary background job. Reuse the studio-timezone date-only semantics.
+> Staff-only server-side; IDOR/mass-assignment/param-pollution/SQLi safe. Accessible, responsive.
+> Non-vacuous tests with an independent oracle. Feature branch → PR → CI → merge. Stop after Phase 11.
+
+### What came back
+
+The exact requirement is Goal 10's sentence (expired-or-within-7-days members in an alerts area + a
+nav count badge; staff dismiss; extend-then-eligible reappears). Confirmed the Phase-2 schema
+(Decision 11: expiry-keyed unique dismissal) is exactly sufficient — dynamic computation, no new
+table, no migration, no background job. Designed a metric matrix, ran a 3-lens adversarial panel,
+implemented `listMembershipAlerts`/`dismissMembershipAlert` + the two routes + the client UI, and
+added 14 tests (407 total).
+
+### What was wrong, and what was done about it
+
+- **The design panel caught a real MAJOR before implementation shipped.** The dismiss recorded a
+  dismissal for the member's CURRENT expiry unconditionally. A concrete, malice-free race — staff A's
+  /alerts page renders a member; staff B extends that member to a far-future date (design accepts the
+  stale page); staff A clicks Dismiss → the server records a dismissal for the far-future value — then
+  ~a year later, when that value enters the 7-day window, the GET's `NOT EXISTS` on `(member, value)`
+  excludes it and the alert NEVER returns, violating Goal 10. Fixed by making the dismiss a graceful
+  no-op unless the member's current expiry is within the window, preserving Decision 11's invariant
+  that a dismissal row only ever exists for an actually-alerted value. A test pins it (dismiss a
+  far-future member → nothing recorded → it still alerts when shortened into the window).
+- **An instructor visiting /alerts crashed** (the staff-only AlertsProvider was absent, so
+  `useAlerts()` threw). Made the hook null-safe and the page redirect a provider-less visitor to
+  /sessions — matching the dashboard's non-staff behaviour. The DATA is protected server-side by the
+  API regardless.
+- **Confirmed correct (not changed):** the today+7-INCLUSIVE eligibility (the standard "within N
+  days" reading, avoiding the gap where an expiring-today member shows in no alert — pinned by
+  boundary tests today-1/today/today+6/today+7/today+8); the urgency copy is pluralised ("1 day" not
+  "1 days"); each dismiss button has a distinct accessible name. EXPLAIN ANALYZE (~1.2 ms at 2000
+  members) confirmed no new index is warranted.

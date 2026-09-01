@@ -361,6 +361,34 @@ Goal 8's studio landing view. Staff-only, studio-wide, no parameters.
   empty states; an "as of <studio-local time>" caption; responsive grid + scrollable tables. No new
   index, no migration, no caching/realtime. Full rationale in decisions.md #32.
 
+## Membership expiry alerts (Phase 11)
+
+Goal 10: staff see members whose membership is expired or expiring within seven days, dismiss them,
+and a nav badge shows the count.
+
+- **Dynamic, never persisted.** `listMembershipAlerts` (src/server/domain/alerts.ts) runs ONE
+  bounded, parameterized query: members WHERE `membership_expires_on <= studioToday+7` AND no
+  dismissal row matches the member's OWN current expiry (a correlated NOT EXISTS, which Prisma can't
+  express — hence raw SQL). Alerts are computed from current expiry + current date + dismissal state,
+  so date rollover and member edits are reflected on the next read with NO cron/worker/queue. Date-
+  only comparison (`@db.Date`), no timezone off-by-one. EXPLAIN: index scan on
+  `members(membership_expires_on)` + a merge anti-join for the dismissal exclusion, ~1.2 ms at 2000
+  members; no N+1, no new index (decisions.md #33).
+- **Expiry-keyed dismissal (Decision 11), dismiss-only-if-eligible.** `POST /api/members/[id]/
+alert-dismiss` records `(member_id, current_expiry, staff_actor)` — the expiry from the DB
+  (server-authoritative), the actor from the SessionUser, an empty `.strict()` body (mass-assignment
+  safe). It is a **no-op when the member's current expiry is beyond the window**, so a dismissal row
+  can only exist for a value that was actually alerted — otherwise a far-future date, once dismissed,
+  would never re-alert when it later enters the window (Goal 10's "the alert returns"). Idempotent +
+  concurrency-safe via `@@unique` + `skipDuplicates`.
+- **Staff-only, no params.** `GET /api/members/alerts` gates on `member:manage`, the dismiss on
+  `alert:dismiss`; instructor → 403, unauth → 401, missing member → 404. No query parameters → no
+  filter/injection surface. `no-store` — the expiring-soon set is date/identity-sensitive.
+- **UI (client, staff-only).** An `AlertsProvider` (mounted by the layout for staff) fetches the
+  alerts once and feeds both the nav count badge and the `/alerts` list, so a dismiss reloads both.
+  Dismiss is failure-safe and server-authoritative (never optimistically hides); urgency is TEXT not
+  colour; the badge has screen-reader text; a non-staff visitor to /alerts is redirected to /sessions.
+
 ## Authentication decisions (short form — full entries in docs/decisions.md #13/#14)
 
 - **DB-backed opaque-token sessions**, not signed cookies / JWT / Auth.js / Supabase Auth:

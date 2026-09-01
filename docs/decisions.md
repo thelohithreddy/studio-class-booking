@@ -627,3 +627,62 @@ member:{name,email}} })`; the to-one `member` select is loaded in a single query
   tables scroll in `overflow-x-auto`; no horizontal page overflow.
 - **currentUser() (React cache):** the (app) layout resolves the session (nav + /login redirect) via
   a request-cached `currentUser()` helper, so any server components in a request share one lookup.
+
+## Decision 33 — Membership expiry alerts: dynamic, expiry-keyed dismissal, dismiss-only-if-eligible (Goal 10)
+
+- **What the brief asks (Goal 10, verbatim):** "Any member whose membership expiry date falls within
+  the next seven days, or has already passed, appears in an alerts area, with a count badge visible in
+  the navigation. Studio staff can dismiss the alert. If staff set a new, later expiry date and that
+  date later falls within seven days again, the alert returns." This builds on Decision 11 (the
+  expiry-keyed dismissal design) — the Phase-11 implementation of it.
+- **Eligibility (date-only, studio-local):** a member is alerted iff `membershipExpiresOn <=
+studioToday + 7` AND no dismissal row matches the member's CURRENT expiry value. The single
+  inequality captures both clauses — "has already passed" (expiry < today) and "within the next seven
+  days" (today..today+7, inclusive of the 7th day AND of today, so an expiring-TODAY member is not
+  lost in a gap). Chosen as the standard "≤ 7 days remaining, or passed" reading (8 calendar dates:
+  today-∞..today+7); both endpoints (today-1/today/today+6/today+7 in, today+8 out) are pinned by
+  boundary tests. `membershipExpiresOn` is a `@db.Date`, so every comparison is pure date-to-date —
+  no time-of-day, no timezone/DST off-by-one (verified across the boundaries).
+- **Dynamic computation, no persistence, no background job (Option A):** alerts are never stored — a
+  single read joins current expiry + current date + dismissal state. Date rollover (an alert
+  appearing "at midnight") and membership edits are reflected on the next read with NO cron / worker
+  / queue / scheduler / realtime. The only persisted state is the dismissal rows (Decision 11).
+- **The dismiss records the CURRENT expiry from the DB — and ONLY if eligible.** `dismissMembershipAlert`
+  reads the member's current `membershipExpiresOn` (server-authoritative — a stale client cannot
+  dismiss a value the member no longer has) and the actor from the SessionUser (never the request
+  body). **A dismiss of a member whose current expiry is NOT within the window is a graceful no-op**
+  (nothing recorded) — a design-review-caught invariant: recording a dismissal for a far-future,
+  non-eligible value would permanently suppress the alert when that same date later rolls into the
+  window, violating Goal 10's "the alert returns". So a dismissal row can only ever exist for a value
+  that was actually alerted (Decision 11's invariant), and extend-to-far-future still legitimately
+  reappears when it re-enters the window. Idempotent + concurrency-safe: the `@@unique([memberId,
+membershipExpiresOn])` constraint + `skipDuplicates` (ON CONFLICT DO NOTHING) → a repeat or two
+  simultaneous dismisses leave exactly one row, no duplicate, no 500.
+- **API / authorization:** STAFF-only. `GET /api/members/alerts` (member:manage — reading member
+  expiry data, the same gate as the members list) → `{ alerts, count }`, no-store, NO query params (no
+  filter-widening / parameter-pollution / SQLi-via-filter surface). `POST /api/members/[id]/
+alert-dismiss` (alert:dismiss) → 204, empty `.strict()` body (any smuggled field → 400,
+  mass-assignment-safe). Instructor → 403, unauth → 401, missing/malformed member id → 404. Staff
+  manage all members, so there is no IDOR surface. The alerts query and the dismiss are both
+  parameterized (raw tagged template / Prisma) — no user value is concatenated.
+- **Query / performance:** one bounded, parameterized `$queryRaw` with a correlated NOT EXISTS on the
+  member's OWN expiry (Prisma can't express that correlation). `days_remaining = date - date` (a JS
+  number, never BigInt); `to_char(...,'YYYY-MM-DD')` keeps the wire value a clean date string, not a
+  timezone-fragile pg Date. Deterministic order: expiry ASC (most urgent first), name ASC, id ASC.
+  EXPLAIN ANALYZE on ~2000 members: Index Scan on `members(membership_expires_on)` for the range +
+  a Merge Anti Join for the dismissal exclusion (the `membership_alert_dismissals` unique index) —
+  1.2 ms, no N+1 (a constant-query test confirms one query regardless of member count). **NO NEW
+  INDEX, NO SCHEMA CHANGE, NO MIGRATION.**
+- **Cache:** the "expiring soon" set is date- and identity-sensitive — `no-store`, fetched
+  client-side, so it is never cached across users or across dates; date rollover is reflected on the
+  next fetch.
+- **UI:** STAFF-only. A client `AlertsProvider` (mounted by the (app) layout for staff only, so an
+  instructor never fetches the staff-only route) fetches `/api/members/alerts` once and feeds BOTH the
+  nav count badge and the `/alerts` list, so a dismiss reloads both together. Dismiss UX:
+  keyboard-accessible `<button>` with a DISTINCT accessible name per member, per-item pending state
+  (prevents duplicate submit), on FAILURE keep the alert + show an error (never optimistically hide),
+  on SUCCESS reload — server state authoritative; multi-tab staleness accepted (no realtime). Urgency
+  is TEXT, never colour-only ("Expired N days ago" / "Expires today" / "Expires in N days", correctly
+  pluralised); the badge carries screen-reader text ("N membership alerts"); explicit empty state
+  ("No membership alerts."). A non-staff visitor to /alerts is redirected to /sessions (the provider
+  is absent → `useAlerts()` returns null → redirect, rather than crash).
