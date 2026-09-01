@@ -478,3 +478,65 @@ Logged as they happen. Each entry: what was chosen, what was rejected, and why. 
   zone (Europe/London and America/New_York), in both transition directions, plus transition-adjacent
   existing times, rather than left arbitrary. The DST-invariance property (a weekly 18:00 across both
   2026 UK switches, and 09:00 across the US autumn switch) is unit-tested directly.
+
+## Decision 31 — Secure CSV attendance export: staff-only, per-session-scoped, minimal columns, formula-guarded
+
+- **What the brief asks (Goal 7, verbatim):** "export a session's attendance — every booking with
+  its member and final status — as a CSV file." So ONE ROW = one booking of the session, in every
+  status; the columns are the member and the final status; it is a per-SESSION export, not a
+  searchable list (Goal 6 is the searchable list, and stays JSON).
+- **Endpoint / method:** `GET /api/sessions/[id]/attendance` (the Phase-4 stub, now implemented).
+  GET is an idempotent read with no body. There are deliberately **no query parameters** — the
+  export is always "every booking of this session" — which removes the filter-widening / status /
+  date-range / SQLi-via-filter attack surfaces entirely; the only input is the path id.
+- **Authorization (the security core):** staff-only via `requireCapability('attendance:export')`
+  (Decision 17 — permanently staff-only; an instructor gets 403 even for a session they teach).
+  The capability check runs BEFORE the session is resolved, so a non-staff caller never learns
+  whether a session exists and never reaches a byte of data. The dataset is scoped to the one
+  session (`where: { sessionId }`) BEFORE any serialization — it can never read another session's
+  or global bookings. Staff are authorized for every session, so there is no per-instructor row
+  scoping and no size/count leak. A missing/malformed session id is a 404 (existence-hiding),
+  resolved by an explicit `classSession.findUnique` before the booking query (not an empty CSV).
+- **Columns (explicit, ordered, stable):** `Member Name`, `Member Email`, `Status` — never derived
+  from DB column names. Member **email** is included: this is a staff-only export and staff already
+  have full member-email access (member management, the members list), so it crosses no boundary,
+  and email is the member's stable identifier for an attendance record (names collide). `Status` is
+  the canonical enum token (BOOKED/…/NO_SHOW) — kept identical to the JSON API so staff read one
+  status vocabulary everywhere, not a second humanized set that could drift. **Data minimization:**
+  the query selects only `{ status, member: { name, email } }`; members are not users (Decision 7)
+  so they have no passwordHash/token/secret columns at all — nothing sensitive is even reachable.
+- **Ordering:** `seq ASC` — the booking sequence is a unique monotonic serial (sign-up order), so
+  it is already a total order; deterministic, no tiebreaker needed.
+- **CSV serialization (internal, no heavyweight dependency):** an RFC 4180 serializer
+  (`src/server/reporting/csv.ts`): fields quoted when they contain a comma, quote, CR, LF or
+  leading/trailing whitespace, embedded quotes doubled, CRLF record separators. **CSV/formula
+  injection guard (OWASP):** a cell is prefixed with a single apostrophe when — after stripping any
+  leading whitespace a spreadsheet trims before evaluating — it begins with `= + - @`, so the app
+  treats it as text, never a formula. The stripped run is Unicode-aware (JS `\s`, so it covers not
+  just ASCII space/tab but the non-breaking space, vertical tab, form feed and other whitespace that
+  LibreOffice Calc / Google Sheets trim), closing the leading-whitespace bypass a diff review found.
+  This deliberately alters a hostile-looking leading value (a member literally named `=HYPERLINK(…)`
+  exports as `'=HYPERLINK(…)`); the security requirement outranks perfect fidelity for such values,
+  and it is documented + round-trip-tested. Correctness is verified two ways: exact serialized bytes
+  AND a round trip through a real parser (`csv-parse`, a dev-only dependency) that must reconstruct
+  every intended cell.
+- **UTF-8 BOM (deliberate):** the response body is prefixed with a UTF-8 BOM so Excel — the studio's
+  spreadsheet tool — decodes non-ASCII names (Telugu, Hindi, accented Latin, emoji) correctly rather
+  than as mojibake. The trade-off (a leading BOM) is accepted for Excel compatibility; real CSV
+  parsers strip it (csv-parse `bom:true`), and `Response.text()`/`TextDecoder` strip it too. The
+  serializer stays BOM-free and pure; the BOM is added at the response layer.
+- **Filename safety:** `attendance-<studio-local-date>-<sessionId>.csv`, built ONLY from a
+  server-derived date (YYYY-MM-DD) and the validated session uuid — no class/member name or other
+  user-controlled byte ever reaches `Content-Disposition`, so header/CRLF injection is impossible.
+  The response also sets `X-Content-Type-Options: nosniff` (the body carries member-supplied text)
+  and `Cache-Control: no-store`.
+- **Size / memory:** one session's bookings are naturally small (active ≤ capacity + waitlist, plus
+  historical cancellations). Bounded IN-MEMORY generation — no streaming is claimed or built. A
+  defensive `MAX_EXPORT_ROWS` cap (10 000) returns a clean 413 rather than build an unbounded string;
+  the client cannot influence the size (no limit param), so it is effectively unreachable.
+- **Query / performance:** one `findMany({ where:{sessionId}, orderBy:{seq}, select:{status,
+member:{name,email}} })`; the to-one `member` select is loaded in a single query (no N+1 — a test
+  asserts the query count is constant across 2 vs 12 bookings). It rides the existing
+  `bookings(session_id, status, seq)` index for the sessionId filter (a tiny in-memory sort on seq,
+  since status sits between the two in the index — negligible for a per-session result). No new
+  index; no schema change.

@@ -408,3 +408,47 @@ a partial report, the `scheduling.ts` lock/overlap spine, `studioDateTimeToUtc`,
   rather than a new `/recurring` path (no orphaned stub); `updateSession` locks _exactly_ the
   instructors it re-checks; the idempotency-dedup wording corrected (the application overlap
   check is the dedup, not the exclusion constraints).
+
+## Phase 9 — secure CSV attendance export (Goal 7, second half)
+
+### Prompt
+
+> PHASE 9 — PRODUCTION-GRADE SECURE CSV EXPORT / REPORTING. Implement ONLY the CSV export. Treat it
+> as a SECURITY-SENSITIVE DATA EXFILTRATION BOUNDARY — a CSV endpoint must not become an
+> authorization bypass. Determine the EXACT requirement from the assignment; do not invent fields.
+> Scope the dataset BEFORE filtering/serialization; reuse existing authorization. Handle CSV
+> injection (= + - @), RFC-4180 escaping (comma/quote/newline), Unicode, a deterministic header +
+> column order, a safe filename, bounded size, no N+1. Do NOT build the dashboard, alerts, or
+> deployment. Feature branch → PR → CI → merge. Stop after Phase 9.
+
+### What came back
+
+The audit pinned the exact requirement to Goal 7's one sentence: "export a session's attendance —
+every booking with its member and final status — as a CSV file." So a single staff-only per-session
+export (Decision 17), one row per booking, columns = member + final status — NOT a general bookings
+CSV and not invented fields. Designed as a contract, run through a 3-lens adversarial panel
+(exfiltration / CSV-correctness / assignment-fidelity, with verification), implemented, then
+diff-reviewed. Delivered an internal RFC-4180 serializer with an OWASP formula-injection guard and a
+UTF-8 BOM, a scope-before-serialize export domain, and 32 tests (374 total).
+
+### What was wrong, and what was done about it
+
+- **The panel's one "major" was refuted — the doc lagged the code.** Two lenses flagged that the
+  design doc's "missing session → 404" was unreachable via the flow it wrote (a bare
+  `booking.findMany` would 200-empty a nonexistent session). The verifier refuted it: the actual
+  implementation already does a `classSession.findUnique` existence check before the booking query,
+  so a missing session 404s. The doc was under-specified; the code was correct. Tightened the doc.
+- **The CSV-injection guard was hardened for the leading-whitespace vector.** A first cut prefixed
+  the apostrophe only when the FIRST character was a formula trigger; but Excel trims leading
+  spaces/tabs before evaluating, so ` =cmd` would still execute. The guard now neutralizes a trigger
+  that follows optional leading spaces/tabs (and a leading control char) — unit-tested with ` =1+1`
+  and `\t=cmd`.
+- **A BOM test failed for the right reason.** Asserting the BOM via `res.text()` failed because the
+  Fetch `Response.text()` decodes UTF-8 with `ignoreBOM:false` and strips the leading BOM; the test
+  now asserts the raw bytes (EF BB BF) from `arrayBuffer()`. A good reminder that the platform, not
+  a bug, was eating the BOM — caught by running the real HTTP path.
+- Applied minors: `X-Content-Type-Options: nosniff` on the download (the body carries member text);
+  the filename proven to be built only from a server-derived date + the validated uuid (no
+  user-controlled byte reaches Content-Disposition). Kept with rationale (both confirmed as
+  boundary-crossing-free by the panel): Member Email (staff-only; staff already have full
+  member-email access) and canonical status tokens (consistent with the JSON API).

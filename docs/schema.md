@@ -261,6 +261,16 @@ match has no btree support); at studio scale it is negligible and a `pg_trgm` GI
 `lower(member.name)`/`lower(member.email)` is the documented 100x path (decisions.md #26), not
 added now. See docs/architecture.md for the search pipeline.
 
+## CSV attendance export uses this schema unchanged (Phase 9)
+
+Goal 7's attendance export (`GET /api/sessions/[id]/attendance`) added no tables, columns or
+indexes. It reads one session's bookings — `bookings WHERE session_id = ? ORDER BY seq` with a
+to-one `member` select — riding the existing `(session_id, status, seq)` index for the session
+filter (a small in-memory sort on `seq`, since `status` sits between the two index columns;
+negligible for a per-session result set). Members are not users (Decision 7), so the export's
+`member{name,email}` projection cannot reach any credential column. Full export design in
+decisions.md #31.
+
 ## The booking engine uses this schema unchanged (Phase 6)
 
 Phase 6 added no tables or columns — the Phase-2 model already carried the booking lifecycle.

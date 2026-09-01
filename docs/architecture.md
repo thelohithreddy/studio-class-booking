@@ -302,6 +302,35 @@ WHERE id=$1 FOR UPDATE` (when the session already exists), re-reads the interval
   timezone resolver (`studioDateTimeToUtc`, decisions.md #30). No migration —
   `session_instructors` (Phase 2) already carried the shape and indexes.
 
+## CSV attendance export (Phase 9)
+
+Goal 7's second half: "export a session's attendance — every booking with its member and final
+status — as a CSV file." A single staff-only endpoint, treated as a data-exfiltration boundary.
+
+- **`GET /api/sessions/[id]/attendance`** — STAFF only (`attendance:export`, Decision 17). The
+  capability guard runs FIRST, so an instructor (even the session's own primary) and an
+  unauthenticated caller are stopped with 403/401 before the session is resolved or any row is
+  read. There are **no query parameters**: the export is always "every booking of this session",
+  which structurally removes the filter-widening / status / date / SQLi-via-filter surfaces — the
+  only input is the path id (validated uuid; a missing/malformed id is a 404, existence-hiding).
+- **The dataset is scoped before serialization.** `exportSessionAttendanceCsv` (src/server/domain/
+  attendance.ts) does `classSession.findUnique` (404 if absent) then
+  `booking.findMany({ where: { sessionId }, orderBy: { seq: 'asc' }, select: { status,
+member: { name, email } } })` — the `where: { sessionId }` is the boundary the Phase-4 stub
+  comment demanded; it can never read another session's or global bookings. One row per booking,
+  every status, `seq` order (unique → deterministic). Members are not users (Decision 7), so no
+  credential column is even selectable; only Name, Email, Status are exported.
+- **CSV is generated safely.** An internal RFC 4180 serializer (src/server/reporting/csv.ts) quotes
+  commas/quotes/newlines, doubles embedded quotes, and applies an OWASP formula-injection guard
+  (a leading `= + - @` or control char — after any spaces Excel would trim — is apostrophe-prefixed
+  so a hostile member name can never execute as a spreadsheet formula). The body carries a UTF-8 BOM
+  for Excel Unicode, `Content-Type: text/csv; charset=utf-8`, `X-Content-Type-Options: nosniff`,
+  `Cache-Control: no-store`, and `Content-Disposition: attachment; filename="attendance-<date>-
+<uuid>.csv"` — a filename built only from server-derived safe bytes (no user text reaches the
+  header). Bounded in-memory (a per-session export is small; a `MAX_EXPORT_ROWS` cap → 413 is the
+  defensive backstop). Correctness is round-trip-tested with a real parser; no schema change, no new
+  index (the export rides `bookings(session_id, status, seq)`). Full rationale in decisions.md #31.
+
 ## Authentication decisions (short form — full entries in docs/decisions.md #13/#14)
 
 - **DB-backed opaque-token sessions**, not signed cookies / JWT / Auth.js / Supabase Auth:
