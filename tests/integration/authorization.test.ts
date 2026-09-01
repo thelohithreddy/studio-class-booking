@@ -174,7 +174,7 @@ describe('capability-gated endpoints', () => {
       staff: 'pass',
     },
     { name: 'POST /sessions', call: (c) => sessionsCreate(req('POST', c)), staff: 'pass' },
-    { name: 'POST /sessions/generate', call: (c) => generate(req('POST', c)), staff: 501 },
+    { name: 'POST /sessions/generate', call: (c) => generate(req('POST', c)), staff: 'pass' },
     { name: 'POST /members', call: (c) => membersCreate(req('POST', c)), staff: 'pass' },
     { name: 'GET /members', call: (c) => membersList(req('GET', c)), staff: 200 },
     {

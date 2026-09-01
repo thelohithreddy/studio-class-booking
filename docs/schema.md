@@ -92,11 +92,16 @@ with the session), `instructor_id` FK RESTRICT; reverse index on `instructor_id`
 where I co-teach" and the instructor-scope predicate. App rule: the primary instructor may not
 also appear here for the same session (a CHECK cannot see across tables).
 
-**Overlap policy (explicit, Goal 5):** an instructor may not be in two time-overlapping
-sessions in ANY capacity. The DB enforces primary-vs-primary; the join-table cases are checked
-by the service inside the same transaction, serialised by `pg_advisory_xact_lock` per
-instructor id (sorted when several) — an app-only check alone was shown racy in review. The
-fully-DB alternative (denormalising the session's time range into the join rows,
+**Overlap policy (explicit, Goal 5; implemented in Phase 8):** an instructor may not be in two
+time-overlapping sessions in ANY capacity. The DB exclusion constraints enforce primary-vs-primary
+(and room-vs-room); the join-table cases (primary-vs-co, co-vs-co) are checked by the service
+inside the same transaction — an app-only check alone was shown racy in review. **The Phase-2
+plan to serialise this with `pg_advisory_xact_lock` per instructor id was reversed in Phase 8**
+(decisions.md #28): the mutation instead locks the session row `FOR UPDATE` first, then the
+affected instructors' **user rows** `FOR UPDATE` in sorted-uuid order — the real uuid as the lock
+key (no `hashtext` collision), transaction-scoped and MVCC-reader-friendly, in a uniform
+`session → users` order that is deadlock-free against the booking engine (which locks only the
+session row). The fully-DB alternative (denormalising the session's time range into the join rows,
 trigger-synced) is possible but rejected for its sync complexity at this scale; it is the
 documented escalation path.
 

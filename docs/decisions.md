@@ -378,3 +378,103 @@ Logged as they happen. Each entry: what was chosen, what was rejected, and why. 
   row across page boundaries between requests (no snapshot promise). Last-wins param handling is
   standard, deterministic and safe (every accepted value is validated); rejecting duplicates
   would add complexity for no security gain.
+
+## Decision 28 — All-instructor conflicts serialize on the instructor's user row, under a session→user lock order (reverses the Phase-2 advisory-lock reservation)
+
+- **Context:** Goal 5 makes an instructor one person across every session: they may not be in
+  two time-overlapping sessions whether primary **or** co. The room and primary-vs-primary axes
+  have GiST exclusion constraints (Phase 2), but a co-instructor's schedule spans
+  `class_sessions ⋈ session_instructors`, which a single-table exclusion constraint **cannot**
+  express — so that axis is the application's to enforce, race-safely.
+- **Chose:** A two-level lock taken in one fixed order by **every** schedule mutation:
+  1. `SELECT … FROM class_sessions WHERE id = $1 FOR UPDATE` on the session row (when it already
+     exists), re-reading the interval under the lock;
+  2. then the affected instructors' **user rows**, `FOR UPDATE`, in ascending-uuid order.
+     `createSession` has no existing row, so it locks only the primary's user row. The check
+     (`instructorHasOverlap`: primary OR co, half-open, exclude-self — one index-backed query) and
+     the write are then atomic. The room + primary-vs-primary exclusion constraints remain the
+     race backstop for those two axes; the user-row lock adds the primary-vs-co coverage.
+- **Rejected — and this reverses Decision 21's note that "Phase-2 reserves advisory locks for
+  the cross-table co-instructor conflict":** advisory locks (`pg_advisory_xact_lock(hashtext(id))`)
+  are strictly worse here — the key is a hash (a collision silently over-serializes two unrelated
+  instructors) where the user row is the real uuid; the row lock is transaction-scoped and
+  released automatically; MVCC readers (auth's `getSessionUser`) never block on it. Also rejected:
+  SERIALIZABLE (global cost + retries for a targeted problem), and session/room row locks alone
+  (wrong grain — "add I to A" vs "add I to B" is per-**instructor** across sessions, so locking a
+  session does not serialize it).
+- **Why the session lock is ALSO required (not just the user lock):** a co-add and a concurrent
+  time-edit of the **same** session take disjoint user-lock sets (the time-edit locks the
+  session's _current_ instructors, which do not include the not-yet-added co), and the child
+  INSERT's `FOR KEY SHARE` on the parent row does **not** conflict with the time-edit's
+  `FOR NO KEY UPDATE` of non-key columns — so without a shared session lock both commit and
+  double-book the co. Making both take the session row `FOR UPDATE` first closes it. This exact
+  interleaving was found by the Phase-8 design review and is now covered by a concurrency test.
+- **Why deadlock-free:** the booking engine (Decision 21) locks **only** the session row and
+  never a user row; scheduling locks session-then-users; no scheduling op holds two session rows
+  at once; users are always locked in sorted uuid order. So there is no lock cycle across booking
+  and scheduling, nor between two scheduling ops. A crossed-order multi-instructor test confirms
+  no deadlock.
+- **Trade-off:** a co-add briefly serializes against a booking on the same session (both take
+  its row lock) and against other ops on the same instructor. Measured margin is large; the same
+  `maxWait 10s / timeout 15s` ceilings apply. `updateSession` locks exactly the instructors it
+  re-checks (`toCheck`) — a capacity-only edit locks none beyond the session row.
+
+## Decision 29 — Recurring generation is PARTIAL-with-report, per-occurrence transactions, count-checked before enumeration
+
+- **Chose (Goal 7, overriding the general "prefer all-or-nothing" default):** generation returns a
+  `{ created, skipped, summary }` report; each weekly occurrence is its **own** transaction, so a
+  conflicting occurrence rolls back alone and the loop continues. An occurrence is skipped when the
+  instructor is booked in any capacity (`instructorHasOverlap`, under the primary's user-row lock)
+  or the room is booked (`starts_at < end AND ends_at > start`); the room + primary exclusion
+  constraints backstop a concurrent insert (a caught `23P01` becomes a skip). An **unexpected**
+  error aborts the whole run (rethrows to a scrubbed 500) rather than being silently recorded.
+- **Why partial:** Goal 7 literally asks the result to "report which sessions were created and
+  which were skipped because the chosen instructor or room was already booked" — an all-or-nothing
+  policy cannot produce that report. Per-occurrence transactions give a clean partial with no
+  poisoned-transaction or savepoint dependence (weekly occurrences never overlap each other, so
+  the committed set is always internally valid).
+- **Natural idempotency:** re-submitting the same request finds every slot already taken by the
+  first run and skips all of them — zero duplicates. The **application** check
+  (`instructorHasOverlap` on the primary, which has no room predicate) is the dedup, not the
+  exclusion constraints; a same-instructor/same-time re-run into a _different_ room therefore
+  still skips, it does not create a parallel session. A genuinely parallel run needs a different
+  instructor or a non-overlapping time.
+- **Bounded before any work (a review-hardened point):** the occurrence count is computed
+  **arithmetically** (`O(weekdays)`, no per-day loop, no timezone conversion) and rejected above
+  `MAX_OCCURRENCES = 260` before a single date is materialized; a cheap `MAX_SPAN_DAYS` gate
+  rejects an absurd range first. An adversarial 100-century, 7-weekday payload is refused in
+  microseconds (a test asserts < 2s). Duration/capacity are copied from the class defaults at
+  creation (Decision 19), so a generated session never depends on mutable class defaults.
+- **Consequence (documented recovery contract):** an unexpected mid-loop error leaves occurrences
+  `1..N-1` committed and loses the in-flight report; retry is safe precisely because of the
+  natural idempotency above (the committed occurrences skip on the retry).
+
+## Decision 30 — Wall-clock recurrence times via a two-pass timezone resolver, DST-correct, with an explicit gap/fold policy
+
+- **Chose:** A recurring pattern's start time is a **wall-clock** time in `STUDIO_TIMEZONE`
+  ("18:00 every Tuesday"). Each occurrence's UTC instant is resolved by `studioDateTimeToUtc`
+  (core: `zonedWallClockToUtc`), which keeps the wall clock fixed across a DST switch — 18:00
+  studio-local stays 18:00 on both sides, the UTC instant stepping by the offset change.
+- **Rejected:** naive `firstOccurrence + n × 7 × 24h` arithmetic — it drifts the wall clock by an
+  hour when the clocks change mid-term (a term of 18:00 classes would silently become 17:00 or
+  19:00 for half the term).
+- **How:** solve `U = W − offset(U)`, where `offset` is a two-valued step function around any DST
+  transition, by **bracketing** the transition — sample the offset ~a day before and ~a day after
+  the target (each safely clear of the ~1-hour transition window), giving the two offsets in effect
+  around it. If they agree, no transition is nearby and the single candidate is exact (every real
+  class time). If they disagree the target is transition-adjacent, with a candidate per offset; a
+  candidate is valid iff its own local time reads back as the target. Both valid → an ambiguous
+  fall-back overlap, resolved to the later (standard-time) occurrence; exactly one valid → the
+  wall time's unique instant; neither valid → a nonexistent spring-forward gap, resolved **forward**
+  (the common civil convention).
+- **Why bracketing, not a single sample (a review-caught fix):** the first implementation sampled
+  the offset once at the naive instant, which silently returned the _daylight_ (earlier) instant
+  for an ambiguous time in behind-UTC zones (e.g. America/New_York 01:30 on fall-back) while
+  returning standard time for ahead-of-UTC zones (Europe/London) — a documented-intent mismatch the
+  hostile diff review found, invisible because the unit test only exercised London. Bracketing makes
+  the resolution **offset-sign-independent**.
+- **Why acceptable:** the gap/fold branches govern only a pathological input — a class scheduled at
+  the switch hour itself — and are explicit and unit-tested in a positive- **and** a negative-offset
+  zone (Europe/London and America/New_York), in both transition directions, plus transition-adjacent
+  existing times, rather than left arbitrary. The DST-invariance property (a weekly 18:00 across both
+  2026 UK switches, and 09:00 across the US autumn switch) is unit-tested directly.

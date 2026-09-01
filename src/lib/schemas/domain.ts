@@ -100,6 +100,43 @@ export const updateSessionSchema = z
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' })
 
+// --- Co-instructors (Goal 5) ------------------------------------------------
+
+// Add/remove take an instructor id only; the session id is the path parameter.
+// .strict() so no client can smuggle role/primary/session internals into the body.
+export const coInstructorSchema = z.object({ instructorId: z.string().uuid() }).strict()
+
+// --- Recurring generation (Goal 7) ------------------------------------------
+
+const weekday = z.number().int().min(0).max(6) // 0 = Sunday … 6 = Saturday
+const clockTime = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Expected a time as HH:MM (24-hour)')
+
+export const generateRecurringSchema = z
+  .object({
+    classId: z.string().uuid(),
+    primaryInstructorId: z.string().uuid(),
+    roomId: z.string().uuid(),
+    // z.iso.date() (not the format-only calendarDate) so an impossible date like
+    // 2027-02-30 is a clean 400, never a silent rollover to March 2.
+    startDate: z.iso.date(),
+    endDate: z.iso.date(),
+    weekdays: z.array(weekday).min(1).max(7),
+    startTime: clockTime,
+    durationMinutes: durationMinutes.optional(), // omitted → inherit class default
+    capacity: capacity.optional(), // omitted → inherit class default
+  })
+  .strict()
+  .refine((v) => v.startDate <= v.endDate, {
+    message: 'endDate must be on or after startDate',
+    path: ['endDate'],
+  })
+  .refine((v) => new Set(v.weekdays).size === v.weekdays.length, {
+    message: 'weekdays must be unique',
+    path: ['weekdays'],
+  })
+
 // --- List / query params ----------------------------------------------------
 
 export const listQuerySchema = z.object({
@@ -116,6 +153,8 @@ export type CreateRoomInput = z.infer<typeof createRoomSchema>
 export type UpdateRoomInput = z.infer<typeof updateRoomSchema>
 export type CreateSessionInput = z.infer<typeof createSessionSchema>
 export type UpdateSessionInput = z.infer<typeof updateSessionSchema>
+export type CoInstructorInput = z.infer<typeof coInstructorSchema>
+export type GenerateRecurringInput = z.infer<typeof generateRecurringSchema>
 // Appended to src/lib/schemas/domain.ts
 
 const note = z.string().trim().max(1000)
