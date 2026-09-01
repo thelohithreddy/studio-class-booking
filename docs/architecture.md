@@ -157,6 +157,63 @@ alerts, and co-instructor mutation. Co-instructor scheduling conflicts specifica
 need per-instructor advisory locks (Phase-2 documented risk) — Phase 5 does not claim to
 solve them.
 
+## Booking engine (Phase 6)
+
+The booking lifecycle is the system's concurrency-critical core. Its correctness rests on one
+mechanism: **every booking mutation runs in an interactive transaction whose first statement
+is `SELECT … FROM class_sessions WHERE id = $1 FOR UPDATE`**, taking the session row lock.
+All booking operations for a given session are thereby serialized; different sessions never
+contend. Under the lock the capacity decision, the counter update, the status change and the
+timeline event are one atomic unit.
+
+**State machine** (`src/server/domain/booking-state.ts`, the single authority): create →
+BOOKED (seat) | WAITLISTED (full); BOOKED → CANCELLED | ATTENDED | NO_SHOW; WAITLISTED →
+CANCELLED | BOOKED (promotion, internal). Every other move is a 422 `invalid_transition`. No
+route or service duplicates transition logic.
+
+**Capacity** (`booked_count`): counts the capacity-consuming states — BOOKED, ATTENDED,
+NO_SHOW. WAITLISTED and CANCELLED do not consume; settling a BOOKED booking leaves the count
+unchanged. Invariant: `booked_count = count(status ∈ {BOOKED, ATTENDED, NO_SHOW})`, maintained
+under the lock and hard-bounded by the Phase-2 CHECK `booked_count ≤ capacity`.
+
+**The four transactions:**
+
+- _Create_ — lock session → validate member + membership (valid iff expiry ≥ studio-today) →
+  duplicate-active pre-check → decide BOOKED/WAITLISTED from the live count → insert →
+  counter+1 if BOOKED → CREATED event.
+- _Cancel_ — lock session → **re-read the booking status under the lock** → assert →
+  CANCELLED + event; if it was BOOKED, counter−1 and promote the earliest waitlisted (min seq)
+  into the freed seat (+1, its own event). Exactly one promotion per freed seat because the
+  lock serializes.
+- _Settle_ — lock session → assert `now ≥ startsAt` → re-read status under the lock →
+  BOOKED→ATTENDED/NO_SHOW + event (no counter change).
+- _Note_ — append an immutable NOTE_ADDED event (Goal 9), no status/counter change, no lock
+  needed (it changes nothing raced-upon).
+
+The **re-read of the booking's status _after_ acquiring the lock** is load-bearing: deciding a
+cancel/settle from the pre-lock read would let two concurrent operations on the same booking
+both proceed (overbooking, double promotion, a self-contradicting timeline). Every mutation is
+wrapped in `withDbErrors`, so an escaped constraint (the CHECK, or the partial-unique) becomes
+a clean 422/409, never a raw error. The actor on every event is the authenticated
+`SessionUser` — never a body field.
+
+**Isolation & backstops:** the transactions run at the default READ COMMITTED — correct
+because the lock, not the snapshot, serializes (a probe confirmed that _removing_ the lock
+overbooks). The Phase-2 constraints (`booked_count ≤ capacity`; one active booking per
+member+session) are the race-safe defense-in-depth. Single-lock-anchor ⇒ no deadlocks (each
+booking transaction locks exactly one session row and never a second). Transaction options are
+explicit (`maxWait 10s / timeout 15s`) as headroom for production bursts beyond the tested
+scale; connection-pool sizing is a deploy-phase concern.
+
+**Authorization:** create/cancel/settle/note are `booking:manage` (staff only — instructors
+403); reads (`GET /api/bookings`, `/api/bookings/[id]`) use `bookingScopeWhere` so an
+instructor sees bookings for the sessions they teach and 404s the rest (no existence leak).
+The `/api/bookings/[id]` read returns the booking and its immutable timeline.
+
+**Deferred (still guarded 501):** the rich bookings search/filter/sort (Goal 6, Phase 7),
+recurring generation, CSV, dashboard, alerts, co-instructor mutation. The bookings list here
+is minimal (scoped, paginated, optional session/status filter).
+
 ## Authentication decisions (short form — full entries in docs/decisions.md #13/#14)
 
 - **DB-backed opaque-token sessions**, not signed cookies / JWT / Auth.js / Supabase Auth:

@@ -21,6 +21,22 @@ const envSchema = z.object({
       (value) => value.startsWith('postgres://') || value.startsWith('postgresql://'),
       'DATABASE_URL must be a postgres:// or postgresql:// connection string',
     ),
+
+  // The IANA timezone the studio operates in. Every "today" the booking and
+  // (later) alert logic computes derives from it, so a membership expiring
+  // "today" is judged in the studio's day, not the server's. Validated as a
+  // real IANA zone; defaults to UTC.
+  STUDIO_TIMEZONE: z
+    .string()
+    .default('UTC')
+    .refine((tz) => {
+      try {
+        new Intl.DateTimeFormat('en-CA', { timeZone: tz })
+        return true
+      } catch {
+        return false
+      }
+    }, 'STUDIO_TIMEZONE must be a valid IANA timezone (e.g. Europe/London)'),
 })
 
 export type Env = z.infer<typeof envSchema>

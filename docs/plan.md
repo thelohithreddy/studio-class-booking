@@ -125,6 +125,27 @@ attack suite. No migration (the schema already carried every field). Deferred, d
 still guarded 501: booking lifecycle, waitlist, attendance, recurring, CSV, dashboard, alerts,
 co-instructor mutation.
 
+### Phase 6 — booking engine: state machine + capacity + waitlist + concurrency (done)
+
+Estimated 2.5h, took ~3.5h — the concurrency-critical phase. Followed the protocol with extra
+weight on PROVING the concurrency strategy before implementing: a throwaway probe confirmed
+`$transaction` + `SELECT … FOR UPDATE` blocks a competing tx and gives 10 BOOKED / 30
+WAITLISTED under 40 concurrent, BEFORE any route was written. Then design doc → adversarial
+panel (a hands-on concurrency prober + three lenses + verification) → implement → hostile diff
+review. The panel found ONE blocker, reproduced destructively by the prober: deciding a
+cancel/settle from the booking status read BEFORE the session lock lets two concurrent
+same-booking operations overbook, double-promote and break the immutable ledger. The
+implementation re-reads the status AFTER the lock (the prober verified this exact fix yields
+clean results), proven by the concurrency suite's TEST D/E. The prober also confirmed:
+READ COMMITTED default, no deadlocks, the lock is load-bearing (removing it overbooks), the
+Intl-based membership check is correct across +14/−11 zones, forced-failure rollback works,
+and 40/80 concurrent finish in 87/128ms with default settings. Delivered: the state-machine
+module, membership validity (studio-timezone), the booking service (four locked transactions +
+promotion + standalone-note for Goal 9), five routes, STUDIO_TIMEZONE env, and 39 new tests
+(268 total) — the full concurrency matrix (TEST A–F + rollback), lifecycle, state machine and
+membership. No migration (Phase 2 carried everything). Deferred, still guarded 501: the rich
+bookings search (Phase 7), recurring, CSV, dashboard, alerts, co-instructor mutation.
+
 ## Retrospective (filled at submission)
 
 - What order did you build in, and why that order? — see table above; final commentary at the end.

@@ -25,7 +25,9 @@ import {
 import { POST as generate } from '@app/api/sessions/generate/route'
 import { GET as attendance } from '@app/api/sessions/[id]/attendance/route'
 import { POST as bookingCreate } from '@app/api/bookings/route'
-import { PATCH as bookingPatch } from '@app/api/bookings/[id]/route'
+import { POST as bookingCancel } from '@app/api/bookings/[id]/cancel/route'
+import { POST as bookingSettle } from '@app/api/bookings/[id]/settle/route'
+import { POST as bookingNote } from '@app/api/bookings/[id]/notes/route'
 import { GET as dashboard } from '@app/api/dashboard/route'
 import { POST as alertDismiss } from '@app/api/members/[id]/alert-dismiss/route'
 
@@ -180,11 +182,21 @@ describe('capability-gated endpoints', () => {
       call: (c) => memberPatch(req('PATCH', c), ctx('x')),
       staff: 'pass',
     },
-    { name: 'POST /bookings', call: (c) => bookingCreate(req('POST', c)), staff: 501 },
+    { name: 'POST /bookings', call: (c) => bookingCreate(req('POST', c)), staff: 'pass' },
     {
-      name: 'PATCH /bookings/[id]',
-      call: (c) => bookingPatch(req('PATCH', c), ctx('x')),
-      staff: 501,
+      name: 'POST /bookings/[id]/cancel',
+      call: (c) => bookingCancel(req('POST', c), ctx('x')),
+      staff: 'pass',
+    },
+    {
+      name: 'POST /bookings/[id]/settle',
+      call: (c) => bookingSettle(req('POST', c), ctx('x')),
+      staff: 'pass',
+    },
+    {
+      name: 'POST /bookings/[id]/notes',
+      call: (c) => bookingNote(req('POST', c), ctx('x')),
+      staff: 'pass',
     },
     { name: 'GET /dashboard', call: (c) => dashboard(req('GET', c)), staff: 501 },
     {

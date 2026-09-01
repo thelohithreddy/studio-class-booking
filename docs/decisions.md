@@ -278,3 +278,59 @@ Logged as they happen. Each entry: what was chosen, what was rejected, and why. 
   narrow archive-between-check-and-insert race; since the brief permits sessions to _exist_
   on archived classes, only the self-imposed "no new" rule is bypassed in that rare race —
   documented as acceptable.
+
+## Decision 21 — Per-session `SELECT … FOR UPDATE` as the single concurrency anchor
+
+- **Chose:** Every booking mutation runs in one interactive transaction whose first statement
+  locks the session row (`FOR UPDATE`), serializing all booking operations for that session,
+  at the default READ COMMITTED isolation.
+- **Rejected:** SERIALIZABLE (global cost + retry loops for a problem a row lock solves
+  exactly); a bare atomic conditional UPDATE (correct for create alone, but cancel+promote is
+  a multi-row decision one anchor handles uniformly); advisory locks (Phase-2 reserves those
+  for the cross-table co-instructor conflict, not this); any in-memory/application lock (does
+  not hold across processes — the database must own correctness).
+- **Why correct under READ COMMITTED:** the lock, not the snapshot, serializes — a competing
+  transaction blocks at its own `FOR UPDATE` until the holder commits, then re-reads the
+  committed state with a fresh per-statement snapshot. A probe confirmed the strength both
+  ways: 40 concurrent creates on capacity 10 give exactly 10 BOOKED / 30 WAITLISTED with the
+  lock, and _overbook without it_.
+- **Trade-off:** each mutation holds its connection for the transaction; a burst on one hot
+  session queues. Measured margin is large (40 concurrent in 87ms, 80 in 128ms on the default
+  pool); explicit `maxWait 10s / timeout 15s` add headroom. Single-lock-anchor ⇒ no deadlocks.
+
+## Decision 22 — `booked_count` counts BOOKED + ATTENDED + NO_SHOW
+
+- **Chose:** `booked_count = count(status ∈ {BOOKED, ATTENDED, NO_SHOW})` — the
+  capacity-consuming states. WAITLISTED and CANCELLED do not consume.
+- **Rejected:** counting BOOKED only (settlement would then have to decrement the counter,
+  and the counter would drift through the settlement window and drop after a session).
+- **Why:** a seat is consumed the moment a member is BOOKED and stays consumed through
+  settlement — ATTENDED/NO_SHOW are terminal states of a formerly-BOOKED seat. Counting them
+  makes **settlement a no-op on the counter**, so there is no drift window and the CHECK
+  `booked_count ≤ capacity` stays meaningful throughout. Reconciles the Phase-2 schema comment
+  (which had said "count of BOOKED") — updated to this precise rule. An audit query
+  (`booked_count == count(...)`) is asserted after every concurrency scenario.
+
+## Decision 23 — Waitlist promotion does not re-check membership expiry
+
+- **Chose:** Cancelling a BOOKED booking promotes the earliest waitlisted member (min `seq`)
+  unconditionally; promotion does not re-validate that member's membership.
+- **Rejected:** skipping expired members and promoting the next valid one (complicates the
+  deterministic order and can leave a freed seat unfilled while a later, valid member jumps
+  the queue).
+- **Why:** the brief gates only the creation of a **new** booking ("a member whose membership
+  expiry date has passed cannot create a new booking"). A promotion fulfils a waitlist spot
+  the member secured while valid — it is not a new booking. Promoting them honours their place
+  in line. Documented so the interpretation is explicit rather than accidental.
+
+## Decision 24 — Settlement is gated on `startsAt`; booking creation has no time gate
+
+- **Chose:** A booking can be settled to ATTENDED/NO_SHOW only once `now ≥ session.startsAt`
+  ("the session's scheduled time" = its start). Booking _creation_ has no upper time bound.
+- **Rejected:** gating settlement on `endsAt` (staff need to mark a no-show as soon as the
+  class begins and the member has not arrived, not only after it ends); forbidding bookings on
+  a started/past session (a staff walk-in recorded just after start is legitimate — "record
+  who actually showed up").
+- **Consequence:** a member booked onto an already-started session can be settled immediately;
+  a member waitlisted onto a past session simply never gets promoted (harmless). The server
+  clock (`Date.now()` vs the stored `startsAt`) decides, never a client timestamp.

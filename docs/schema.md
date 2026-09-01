@@ -223,7 +223,7 @@ tombstone/redaction design (member _rows_ are updatable — only the event ledge
    anyway: exclusion-constraint index expressions must be IMMUTABLE and `timestamptz +
 interval` is only STABLE. A CHECK ties the three columns together, so the denormalisation
    cannot drift. Buys DB-level overlap enforcement.
-2. **`class_sessions.booked_count`** — derivable from `count(*) WHERE status='BOOKED'`,
+2. **`class_sessions.booked_count`** — derivable from `count(*) WHERE status IN ('BOOKED','ATTENDED','NO_SHOW')` (the capacity-consuming states, decisions.md #22),
    stored anyway: a COUNT cannot be CHECK-constrained, a counter can. The service maintains
    it inside the locked transaction (equality with the real count is app-maintained and
    auditable); the DB hard-bounds it at `capacity`, so an 11th booking on a 10-seat session
@@ -243,6 +243,22 @@ six orders of magnitude of headroom at studio scale, a deliberate simplicity tra
 BigInt JSON friction; (4) the GiST exclusion indexes grow with future sessions but lookups
 stay range-bounded. The booking hot path itself (per-session row lock + `(session_id, status,
 seq)` index) is size-independent per session and does not degrade with global table growth.
+
+## The booking engine uses this schema unchanged (Phase 6)
+
+Phase 6 added no tables or columns — the Phase-2 model already carried the booking lifecycle.
+It relies on, and is protected by, exactly what Phase 2 built: `bookings.status` is mutable
+while identity (`id/member_id/session_id/seq/created_at`) is frozen by trigger and rows are
+never deleted; `bookings.seq` (SERIAL) is the deterministic waitlist order (min `seq` =
+earliest); the partial unique `bookings_one_active_per_member_session` is the duplicate-active
+backstop; `class_sessions.booked_count` with `CHECK (booked_count ≤ capacity)` is the hard
+overbooking backstop; and `booking_events` is append-only (immutability triggers) with the
+shape CHECK that keeps CREATED/STATUS_CHANGED/NOTE_ADDED events well-formed. The engine takes a
+`SELECT … FOR UPDATE` lock on the `class_sessions` row (index-backed by the primary key) to
+serialize a session's booking mutations; the `bookings(session_id, status, seq)` index serves
+both the capacity count and the earliest-waitlisted scan. Concurrency correctness and the
+counter/history invariants are proven by the Phase-6 concurrency suite. See
+docs/architecture.md and decisions.md #21–#24.
 
 ## Domain CRUD uses this schema unchanged (Phase 5)
 

@@ -114,10 +114,13 @@ model ClassSession {
   durationMinutes     Int      @map("duration_minutes")
   endsAt              DateTime @map("ends_at") @db.Timestamptz(6)
   capacity            Int
-  /// Denormalized count of BOOKED bookings, maintained by the booking service
-  /// inside the per-session locked transaction. CHECK-bounded by capacity in
-  /// the migration SQL — the hard backstop that makes an 11th booking on a
-  /// 10-seat session lose at the database even if app locking ever breaks.
+  /// Denormalized count of capacity-consuming bookings — status in
+  /// {BOOKED, ATTENDED, NO_SHOW} (a seat held, or used after the session);
+  /// WAITLISTED and CANCELLED do not count, so settlement leaves it unchanged
+  /// (docs/decisions.md #22). Maintained by the booking service inside the
+  /// per-session locked transaction; CHECK-bounded by capacity in the migration
+  /// SQL — the hard backstop that makes an 11th booking on a 10-seat session
+  /// lose at the database even if app locking ever breaks.
   bookedCount         Int      @default(0) @map("booked_count")
   primaryInstructorId String   @map("primary_instructor_id") @db.Uuid
   roomId              String   @map("room_id") @db.Uuid
