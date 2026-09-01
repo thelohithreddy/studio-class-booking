@@ -146,6 +146,28 @@ promotion + standalone-note for Goal 9), five routes, STUDIO_TIMEZONE env, and 3
 membership. No migration (Phase 2 carried everything). Deferred, still guarded 501: the rich
 bookings search (Phase 7), recurring, CSV, dashboard, alerts, co-instructor mutation.
 
+### Phase 7 — search, filtering, pagination (Goal 6) (done)
+
+Estimated 1.5h, took ~2.5h. Used the branch → PR → merge workflow (phase-7-search). Protocol:
+audit → design → hands-on query probe → adversarial panel (3 lenses + verification) →
+implement → hostile self-review. The probe proved the risky mechanics UP FRONT: escapeLike
+makes LIKE metacharacters literal (q="%" matches only a member with a literal %, not all), the
+scope∩classId intersection returns empty for a class the instructor doesn't teach (cannot
+widen), the half-open [from,to) range excludes the `to` boundary, and EXPLAIN shows index
+scans with no sequential scans. The panel's one "major" — that searching member email for
+instructors is an inference oracle — was REFUTED by the verifier: Goal 6 mandates "text search
+over name and email" for the viewer, so role-gating email would violate the goal; kept and
+documented as a scope-contained accepted limitation (decisions.md #25). Applied minors: the
+sessions date range now uses studio-timezone midnight boundaries (DST-correct, consistent with
+membership) rather than UTC; a belt-and-suspenders orderBy fallback so a future sort key can't
+silently drop the pagination tiebreaker; the list param typed from the schema. Delivered: the
+full Goal-6 bookings list (scoped text search over member name/email, class/session/status
+filters, bookedAt/status/session sort, pagination + scoped total), a sessions date-range
+filter, escapeLike + studioDateToUtc helpers, and 28 new tests (297 total) — scope+count,
+filter intersection, literal-wildcard + SQLi payloads, deterministic cross-page ordering,
+pagination bounds, data minimization, and DST boundaries. No migration. Deferred, still guarded
+501: co-instructor mutation, recurring, CSV, dashboard, alerts.
+
 ## Retrospective (filled at submission)
 
 - What order did you build in, and why that order? — see table above; final commentary at the end.

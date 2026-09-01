@@ -214,6 +214,51 @@ The `/api/bookings/[id]` read returns the booking and its immutable timeline.
 recurring generation, CSV, dashboard, alerts, co-instructor mutation. The bookings list here
 is minimal (scoped, paginated, optional session/status filter).
 
+## Search, filtering & pagination (Phase 7)
+
+Goal 6's "Finding bookings" — one scoped bookings list — plus a date-range filter on the
+sessions list. The pipeline treats search as an authorization boundary:
+
+```
+authenticate → authorize SCOPE (first) → apply filters → COUNT (same predicate) → sort → paginate
+```
+
+- **Scope first, count under the same predicate.** `listBookings` builds one
+  `where = AND[ bookingScopeWhere(user), ...filters ]` and passes the _identical_ `where` to
+  both `findMany` and `count`. The scope is the first AND term, so it applies before filtering
+  and before counting — a filter can only _intersect_ the scope (never widen it), and a total
+  can never include an out-of-scope row. For an instructor, `bookingScopeWhere` restricts to
+  the sessions they teach; a `classId` filter (`{ session: { classId } }`) is ANDed with the
+  scope's `{ session: … }`, so the booking's session must satisfy both — the filter cannot
+  reach another instructor's sessions (proven: a class they don't teach returns an empty list,
+  not a widened one).
+- **Text search** over member name and email (Goal 6), case-insensitive, treated as a literal
+  substring: `escapeLike` prefixes the LIKE escape before `% _ \`, so a search for "50%"
+  finds the member literally named "50%", not everything. Prisma parameterizes the value, so
+  there is no injection surface (SQLi payloads return safe empty results with tables intact).
+- **Sorting** by a fixed allowlisted key (`bookedAt` | `status` | `session`) × direction
+  (`asc` | `desc`) — no user column or direction string ever reaches SQL; a fixed map builds
+  the Prisma `orderBy`, always ending in the unique `id` tiebreaker so rows never shuffle
+  across pages. An invalid sort/dir is a 400.
+- **Pagination**: OFFSET/LIMIT (page 1..∞, pageSize 1..100), chosen over keyset because Goal 6
+  wants "the total number of matches" (a page-numbered UI) and the datasets are studio-scale.
+  Trade-off documented: under concurrent inserts a row can shift across page boundaries
+  between requests (no snapshot promise). Response is the project convention
+  `{ bookings, total, page, pageSize }`.
+- **Data minimization**: the list returns booking scalars + member `{id, name}` + session
+  `{id, startsAt, class{title}}` — never a password hash, member email, staff note or the
+  event timeline. The member text search _filters_ on email but never _returns_ it; email
+  search is Goal-6-mandated for the viewer and stays scope-contained (decisions.md #25).
+- **Indexes**: existing Phase-2 indexes cover every sort/filter (`bookings(status, created_at)`,
+  `(created_at)`, `(session_id, status, seq)`; `class_sessions(class_id, starts_at)`,
+  `(starts_at)`). No new index — EXPLAIN confirms index scans, no sequential scans on the
+  scoped path. The only unindexed part is the member name/email ILIKE substring; at studio
+  scale it is negligible and a `pg_trgm` GIN index is the documented 100x path (decisions.md
+  #26), not added speculatively now.
+- **Sessions date range**: half-open `[from, to)` on `starts_at` — `from` inclusive, `to`
+  exclusive (no end-of-day bug). `from`/`to` are calendar dates interpreted as midnight in
+  `STUDIO_TIMEZONE` (DST-correct, consistent with membership expiry), ANDed under the scope.
+
 ## Authentication decisions (short form — full entries in docs/decisions.md #13/#14)
 
 - **DB-backed opaque-token sessions**, not signed cookies / JWT / Auth.js / Supabase Auth:

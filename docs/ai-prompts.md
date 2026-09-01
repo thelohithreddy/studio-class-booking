@@ -309,3 +309,43 @@ prober + three lenses + verification), implementation, and a hostile diff review
   (settlement on startsAt, promotion without expiry re-check) as decisions rather than
   accidents. The prober confirmed the default tx timeout/pool have 20–60× margin, so the
   explicit `maxWait/timeout` are headroom, not a fix.
+
+## Phase 7 — search, filtering, pagination (Goal 6)
+
+### Prompt
+
+> PHASE 7 — PRODUCTION SEARCH + FILTERING + PAGINATION. This is NOT "add a search box":
+> database-level filtering + resource authorization + deterministic sorting + bounded
+> pagination + correct scoped counts + safe search + no data leakage. Authorization scope
+> applied BEFORE filtering/counting/sorting/pagination. Instructor never gets global booking
+> access; filters must not widen scope. Allowlist sort fields + direction. Parameterize all
+> search values; handle wildcard semantics deliberately. Branch → PR → merge. Stop after Phase 7.
+
+### What came back
+
+The Goal-6 bookings list (scoped text search over member name/email, class/session/status
+filters, bookedAt/status/session sort, pagination + scoped total) plus a sessions date-range
+filter — designed, proven by a hands-on query probe, reviewed by a 3-lens panel with
+verification, then implemented.
+
+### What was wrong, and what was done about it
+
+- **The panel's "major" was a real judgment call that the verifier correctly reversed.** A lens
+  flagged that searching member _email_ for instructors (who can't see emails) is an inference
+  oracle, and proposed role-gating the email clause. The adversarial verifier refuted it: Goal 6
+  literally mandates "text search over member name **and** email" for _the viewer_ (instructors
+  included), so gating email would **violate the assignment**. The loop stopped me from shipping
+  a Goal-6-breaking "fix"; the behaviour is kept and the scope-contained oracle documented
+  (decisions.md #25). A good reminder that an adversarial finding is a hypothesis, not a verdict.
+- **The sessions date range used UTC-day boundaries while the rest of the server uses
+  STUDIO_TIMEZONE.** Fixed: `from`/`to` now convert to midnight in the studio timezone
+  (DST-correct via an Intl offset), consistent with how membership expiry is judged; a DST
+  boundary test pins it.
+- Belt-and-suspenders: the sort key→orderBy map falls back to the bookedAt order if a future
+  key is ever unmapped, so pagination can never silently lose its unique `id` tiebreaker (and
+  the cross-page shuffle it prevents).
+- Two test-fixture bugs surfaced by _running_ (not reading): shared-instructor sessions at
+  overlapping times tripped the Phase-2 instructor-overlap constraint — fixed by a fresh
+  instructor per fixture session. The query mechanics themselves (literal wildcards, the
+  scope∩filter intersection, half-open date boundaries, index-only plans) were all proven by a
+  throwaway probe before the routes were written.
