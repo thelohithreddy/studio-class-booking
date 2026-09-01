@@ -9,6 +9,8 @@ import { parseIdOr404 } from '@/server/domain/ids'
 import { assertTransition, consumesCapacity } from '@/server/domain/booking-state'
 import { isMembershipValid } from '@/server/domain/membership'
 import { bookingScopeWhere } from '@/server/authorization/scope'
+import { escapeLike } from '@/server/domain/search'
+import type { BookingListQuery } from '@/lib/schemas/domain'
 
 /**
  * The booking engine. Every mutation runs inside one interactive transaction
@@ -308,31 +310,61 @@ export async function getBooking(db: Db, user: SessionUser, id: string) {
   return booking
 }
 
-export async function listBookings(
-  db: Db,
-  user: SessionUser,
-  {
-    page,
-    pageSize,
-    sessionId,
-    status,
-  }: { page: number; pageSize: number; sessionId?: string; status?: BookingStatus },
-) {
-  const where: Prisma.BookingWhereInput = {
-    AND: [
-      bookingScopeWhere(user),
-      ...(sessionId ? [{ sessionId }] : []),
-      ...(status ? [{ status }] : []),
-    ],
+/**
+ * Goal 6 — "Finding bookings". One scoped list with a text search over member
+ * name and email, filters for class/session/status, allowlisted sort, and
+ * pagination with a total. The authorization scope is the FIRST AND term, so
+ * it is applied before filtering AND before counting (the identical `where`
+ * feeds both findMany and count) — a client filter can only intersect the
+ * scope, never widen it, and the total can never include an out-of-scope row.
+ * The sort maps a fixed key/direction to Prisma orderBy (no user column ever
+ * reaches SQL) with a unique `id` tiebreaker so rows never shuffle across
+ * pages. All of it runs in the database.
+ */
+export async function listBookings(db: Db, user: SessionUser, query: BookingListQuery) {
+  const { page, pageSize, q, classId, sessionId, status, sort, dir } = query
+
+  const filters: Prisma.BookingWhereInput[] = []
+  if (classId) filters.push({ session: { classId } })
+  if (sessionId) filters.push({ sessionId })
+  if (status) filters.push({ status })
+  if (q) {
+    // Literal, case-insensitive substring over member name OR email.
+    const term = escapeLike(q)
+    filters.push({
+      member: {
+        OR: [
+          { name: { contains: term, mode: 'insensitive' } },
+          { email: { contains: term, mode: 'insensitive' } },
+        ],
+      },
+    })
   }
+
+  // Scope FIRST — intersection with every filter, never a union.
+  const where: Prisma.BookingWhereInput = { AND: [bookingScopeWhere(user), ...filters] }
+
+  // Fixed key→orderBy map, always ending in the unique `id` tiebreaker so pages
+  // are stable. The `?? bookedAt` fallback is belt-and-suspenders: even if a
+  // future sort key reached here unmapped, pagination keeps a total order
+  // rather than silently losing determinism.
+  const orderByByKey: Record<typeof sort, Prisma.BookingOrderByWithRelationInput[]> = {
+    bookedAt: [{ createdAt: dir }, { id: dir }],
+    status: [{ status: dir }, { id: dir }],
+    session: [{ session: { startsAt: dir } }, { id: dir }],
+  }
+  const orderBy = orderByByKey[sort] ?? orderByByKey.bookedAt
+
   const [bookings, total] = await Promise.all([
     db.booking.findMany({
       where,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      orderBy,
       skip: (page - 1) * pageSize,
       take: pageSize,
       select: {
         ...BOOKING_SELECT,
+        // Name only — never member email (a staff-only surface), password
+        // hashes, notes or the event timeline.
         member: { select: { id: true, name: true } },
         session: { select: { id: true, startsAt: true, class: { select: { title: true } } } },
       },

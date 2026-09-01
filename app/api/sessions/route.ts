@@ -1,12 +1,12 @@
 // app/api/sessions/route.ts
-import { z } from 'zod'
-
 import { db } from '@/lib/db'
-import { ApiError, handleRoute } from '@/lib/api/errors'
+import { handleRoute } from '@/lib/api/errors'
 import { requireUser } from '@/server/auth/session'
 import { requireCapability } from '@/server/authorization/guards'
 import { sessionScopeWhere } from '@/server/authorization/scope'
-import { createSessionSchema, listQuerySchema } from '@/lib/schemas/domain'
+import { createSessionSchema, sessionListQuerySchema } from '@/lib/schemas/domain'
+import { studioDateToUtc } from '@/server/domain/membership'
+import type { Prisma } from '@/generated/prisma/client'
 import { createSession } from '@/server/domain/sessions'
 
 /**
@@ -16,17 +16,26 @@ import { createSession } from '@/server/domain/sessions'
  */
 export const GET = handleRoute(async (req) => {
   const user = await requireUser(req)
-  const url = new URL(req.url)
-  const { page, pageSize } = listQuerySchema.parse(Object.fromEntries(url.searchParams))
-  const classIdRaw = url.searchParams.get('classId')?.trim() || undefined
-  if (classIdRaw !== undefined && !z.string().uuid().safeParse(classIdRaw).success) {
-    throw new ApiError(400, 'invalid_request', 'classId must be a valid id.')
-  }
+  const { page, pageSize, classId, from, to } = sessionListQuerySchema.parse(
+    Object.fromEntries(new URL(req.url).searchParams),
+  )
 
-  // The classId filter is ANDed UNDER the scope, so it can only narrow an
+  // A half-open [from, to) range on starts_at: `from` inclusive, `to` exclusive
+  // (no end-of-day bug). The dates are interpreted as calendar days in the
+  // studio's timezone (consistent with membership) — midnight studio-local,
+  // converted to the matching UTC instant.
+  const startsAtFilter: Prisma.DateTimeFilter = {}
+  if (from) startsAtFilter.gte = studioDateToUtc(from)
+  if (to) startsAtFilter.lt = studioDateToUtc(to)
+
+  // Every filter is ANDed UNDER the scope, so it can only narrow an
   // instructor's visible set — never widen it.
-  const where = {
-    AND: [sessionScopeWhere(user), ...(classIdRaw ? [{ classId: classIdRaw }] : [])],
+  const where: Prisma.ClassSessionWhereInput = {
+    AND: [
+      sessionScopeWhere(user),
+      ...(classId ? [{ classId }] : []),
+      ...(from || to ? [{ startsAt: startsAtFilter }] : []),
+    ],
   }
 
   // Bounded like the classes/members lists — a staff caller must not fetch
