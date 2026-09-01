@@ -202,7 +202,7 @@ describe('capability-gated endpoints', () => {
     {
       name: 'POST /alert-dismiss',
       call: (c) => alertDismiss(req('POST', c), ctx('x')),
-      staff: 501,
+      staff: 'pass',
     },
     {
       name: 'GET /sessions/[id]/attendance',

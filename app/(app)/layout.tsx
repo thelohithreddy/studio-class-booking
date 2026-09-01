@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 
 import { currentUser } from '@/server/auth/current-user'
 
+import { AlertsBadge, AlertsProvider } from './alerts-provider'
+
 /**
  * Server component: resolves the authenticated identity from the request and
  * redirects to /login when there is none. This is UX only — every API route
@@ -25,10 +27,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         ]
       : [['/sessions', 'My sessions']]
 
-  return (
+  const shell = (
     <div className="min-h-screen">
       <header className="flex items-center justify-between border-b border-slate-200 px-6 py-3 dark:border-slate-800">
-        <nav className="flex items-center gap-4 text-sm">
+        <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
           <span className="font-semibold">Studio</span>
           {staffLinks.map(([href, label]) => (
             <Link
@@ -39,6 +41,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               {label}
             </Link>
           ))}
+          {user.role === 'STAFF' && <AlertsBadge />}
         </nav>
         <div className="flex items-center gap-3 text-sm text-slate-500">
           <span>
@@ -54,4 +57,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="mx-auto max-w-4xl p-6">{children}</main>
     </div>
   )
+
+  // Only staff get the alerts UI (and the staff-only /api/members/alerts fetch);
+  // the provider feeds both the nav badge and the /alerts list.
+  return user.role === 'STAFF' ? <AlertsProvider>{shell}</AlertsProvider> : shell
 }

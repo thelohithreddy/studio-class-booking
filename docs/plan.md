@@ -264,6 +264,34 @@ other page uses (data-free static shell, per-request fetch), with authorization 
 by `/api/dashboard` (decisions.md #32). No schema change, no new index, no caching/realtime. Deferred,
 still guarded 501: membership alerts (Goal 10); deployment.
 
+### Phase 11 — membership expiry alerts (Goal 10) (done)
+
+Branch `phase-11-membership-alerts`. Goal 10: members whose membership is expired or expires within
+seven days appear in an alerts area with a nav count badge; staff dismiss them; extending the expiry
+makes the alert return. Protocol: audit → extract the exact requirement + a metric matrix → confirm
+the Phase-2 dismissal design (Decision 11: expiry-keyed, @@unique) → design doc → adversarial design
+panel (eligibility/date, authz/IDOR, UI/a11y lenses + verification) → implement → hostile diff review.
+No schema change, no migration, no new index, no background job — the alerts are dynamically computed.
+
+The design panel found a real MAJOR (upheld) before merge: the dismiss recorded a dismissal for the
+member's current expiry UNCONDITIONALLY, so dismissing a far-future (non-eligible) value — reachable
+by a stale-client race after another staff extends the expiry — would permanently suppress the alert
+when that date later rolled into the window, violating Goal 10's "the alert returns". Fixed by making
+the dismiss a graceful no-op unless the current expiry is within the window (a dismissal row can only
+exist for an actually-alerted value). Also fixed: an instructor visiting /alerts crashed (no provider
+→ useAlerts threw) → now redirects to /sessions. Confirmed clean: the today+7-inclusive eligibility
+reading (standard "within N days"), pluralised urgency text, and distinct dismiss button labels.
+
+Delivered: `listMembershipAlerts` + `dismissMembershipAlert` (one bounded correlated-NOT-EXISTS query,
+dismiss-if-eligible, idempotent), `GET /api/members/alerts`, the implemented dismiss route, the client
+AlertsProvider + nav badge + /alerts page, and 14 new tests (407 total): eligibility boundaries
+(today-1/today/today+6/today+7/today+8) with an independent SQL oracle, the full expiry-keyed
+lifecycle (dismiss / extend-reappears / shorten-appears / re-set-stays-dismissed / no-op-when-not-
+eligible), idempotency, concurrency, staff-only auth (401/403/204/404), mass-assignment + SQLi-in-path
+rejection, the actor-from-session check, and a constant-query no-N+1 check. EXPLAIN ANALYZE reviewed
+(~1.2 ms at 2000 members). Deferred, still guarded: nothing — all ten goals are now implemented;
+deployment + final verification remain.
+
 ## Retrospective (filled at submission)
 
 - What order did you build in, and why that order? — see table above; final commentary at the end.

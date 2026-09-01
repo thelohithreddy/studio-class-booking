@@ -281,6 +281,16 @@ ride `bookings(status,created_at)` and `bookings(session_id,status,seq)`). EXPLA
 bookings executes each in <1 ms; the all-time by-status/by-class aggregates read the whole (small)
 bookings table by design. NO NEW INDEX REQUIRED — full analysis in decisions.md #32.
 
+## Membership alerts use this schema unchanged (Phase 11)
+
+Goal 10's alerts (`listMembershipAlerts` / `dismissMembershipAlert`) added no tables, columns or
+indexes — the Phase-2 design anticipated them. The alerts read scans `members(membership_expires_on)`
+(the existing `@@index`) for `<= today+7` and excludes dismissed values via a correlated NOT EXISTS
+against `membership_alert_dismissals`, whose `@@unique([member_id, membership_expires_on])` both keys
+the dismissal to the expiry value (Decision 11 — extend-then-eligible reappears) and makes the
+dismiss idempotent/concurrency-safe. EXPLAIN ANALYZE at ~2000 members: index scan + merge anti-join,
+~1.2 ms. NO NEW INDEX — full analysis in decisions.md #33.
+
 ## The booking engine uses this schema unchanged (Phase 6)
 
 Phase 6 added no tables or columns — the Phase-2 model already carried the booking lifecycle.
