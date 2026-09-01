@@ -269,3 +269,43 @@ diff review.
   not a P2025 500), tightened PATCH to validate the resolved instructor role rather than only a
   changed one, and wired the list routes through the previously-dead `listQuerySchema`
   (out-of-range pagination is now a clean 400).
+
+## Phase 6 — booking engine (state machine + concurrency)
+
+### Prompt
+
+> PHASE 6 — BOOKING LIFECYCLE + CAPACITY + WAITLIST + PROMOTION + CANCELLATION + SETTLEMENT +
+> CONCURRENCY SAFETY. Assume simultaneous requests, double-clicks, retries. The 40-concurrent
+> test (capacity 10 → 10 BOOKED / 30 WAITLISTED, never 11) is the most important part. Prove
+> the concurrency strategy before implementing. One authoritative state machine. Immutable
+> history. Actor from the authenticated user, never the body. Do NOT implement recurring/CSV/
+> dashboard/alerts. Stop after Phase 6.
+
+### What came back
+
+A design (per-session FOR UPDATE anchor, state-machine module, capacity invariant), proven up
+front by a throwaway concurrency probe, then the adversarial panel (a hands-on concurrency
+prober + three lenses + verification), implementation, and a hostile diff review.
+
+### What was wrong, and what was done about it
+
+- **The blocker — reproduced destructively by the prober.** The design's cancel/settle flow, as
+  written, decided the transition from the booking status read BEFORE taking the session lock.
+  The prober implemented it verbatim and produced, deterministically: two concurrent cancels of
+  one BOOKED booking → two active bookings on a capacity-1 session (overbooking), a drifted
+  counter, two promotion events (double promotion), duplicate CANCELLED events on the
+  append-only ledger, and a settle-racing-cancel that wrote a self-contradicting timeline
+  (event N+1's from_status ≠ event N's to_status — a Goal 9 violation). Both DB backstops
+  missed it (the CHECK passed at 1≤1; the partial-unique saw different members). The fix — which
+  the implementation already carries and the prober verified independently — is to re-read the
+  booking's status AFTER acquiring the session lock and branch on that; TEST D/E prove it
+  against real Postgres. This is the phase's sharpest lesson: a row lock only protects decisions
+  made from reads taken _after_ it is held.
+- Smaller review items, all applied: added a standalone NOTE_ADDED endpoint so Goal 9's "notes
+  staff leave" have a path without a status change; wrapped cancel/settle in `withDbErrors` so
+  an escaped constraint is a clean 409/422; corrected the design's claim that the booked_count
+  CHECK escape is a 409 (it is a 422); reconciled the Phase-2 schema comment ("count of BOOKED")
+  with the actual capacity rule (BOOKED+ATTENDED+NO_SHOW); documented the boundary choices
+  (settlement on startsAt, promotion without expiry re-check) as decisions rather than
+  accidents. The prober confirmed the default tx timeout/pool have 20–60× margin, so the
+  explicit `maxWait/timeout` are headroom, not a fix.
