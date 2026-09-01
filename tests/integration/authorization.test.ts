@@ -155,51 +155,52 @@ function ctx(id: string) {
 // --- capability endpoints: role gate (403), auth gate (401), authorized (501/200) ---
 
 describe('capability-gated endpoints', () => {
+  // `staff` is the expectation for an authorized staff caller: 501 for the
+  // endpoints still stubbed by later phases, or 'pass' for the Phase-5
+  // endpoints that now do real work — where all this table asserts is that
+  // authorization did NOT block staff (the exact business status is proven by
+  // the domain test suites). Instructor→403 and unauth→401 are the invariants.
   const cases: Array<{
     name: string
     call: (cookie?: string) => Promise<Response>
-    authorizedStatus: number
+    staff: number | 'pass'
   }> = [
-    { name: 'POST /classes', call: (c) => classCreate(req('POST', c)), authorizedStatus: 501 },
+    { name: 'POST /classes', call: (c) => classCreate(req('POST', c)), staff: 'pass' },
     {
       name: 'PATCH /classes/[id]',
       call: (c) => classPatch(req('PATCH', c), ctx('x')),
-      authorizedStatus: 501,
+      staff: 'pass',
     },
-    { name: 'POST /sessions', call: (c) => sessionsCreate(req('POST', c)), authorizedStatus: 501 },
-    {
-      name: 'POST /sessions/generate',
-      call: (c) => generate(req('POST', c)),
-      authorizedStatus: 501,
-    },
-    { name: 'POST /members', call: (c) => membersCreate(req('POST', c)), authorizedStatus: 501 },
-    { name: 'GET /members', call: (c) => membersList(req('GET', c)), authorizedStatus: 200 },
+    { name: 'POST /sessions', call: (c) => sessionsCreate(req('POST', c)), staff: 'pass' },
+    { name: 'POST /sessions/generate', call: (c) => generate(req('POST', c)), staff: 501 },
+    { name: 'POST /members', call: (c) => membersCreate(req('POST', c)), staff: 'pass' },
+    { name: 'GET /members', call: (c) => membersList(req('GET', c)), staff: 200 },
     {
       name: 'PATCH /members/[id]',
       call: (c) => memberPatch(req('PATCH', c), ctx('x')),
-      authorizedStatus: 501,
+      staff: 'pass',
     },
-    { name: 'POST /bookings', call: (c) => bookingCreate(req('POST', c)), authorizedStatus: 501 },
+    { name: 'POST /bookings', call: (c) => bookingCreate(req('POST', c)), staff: 501 },
     {
       name: 'PATCH /bookings/[id]',
       call: (c) => bookingPatch(req('PATCH', c), ctx('x')),
-      authorizedStatus: 501,
+      staff: 501,
     },
-    { name: 'GET /dashboard', call: (c) => dashboard(req('GET', c)), authorizedStatus: 501 },
+    { name: 'GET /dashboard', call: (c) => dashboard(req('GET', c)), staff: 501 },
     {
       name: 'POST /alert-dismiss',
       call: (c) => alertDismiss(req('POST', c), ctx('x')),
-      authorizedStatus: 501,
+      staff: 501,
     },
     {
       name: 'GET /sessions/[id]/attendance',
       call: (c) => attendance(req('GET', c), ctx('x')),
-      authorizedStatus: 501,
+      staff: 501,
     },
   ]
 
-  for (const { name, call, authorizedStatus } of cases) {
-    it(`${name}: 401 unauth · 403 instructor · ${authorizedStatus} staff`, async () => {
+  for (const { name, call, staff } of cases) {
+    it(`${name}: 401 unauth · 403 instructor · staff authorized`, async () => {
       expect((await call(undefined)).status).toBe(401)
 
       const denied = await call(world.aCookie)
@@ -207,7 +208,13 @@ describe('capability-gated endpoints', () => {
       // Must be an AUTHORIZATION denial, not a CSRF/origin 403 masquerading as one.
       expect(((await denied.json()) as { error: { code: string } }).error.code).toBe('forbidden')
 
-      expect((await call(world.staffCookie)).status).toBe(authorizedStatus)
+      const staffStatus = (await call(world.staffCookie)).status
+      if (staff === 'pass') {
+        // Authorization did not block staff (the domain suites prove the rest).
+        expect([401, 403]).not.toContain(staffStatus)
+      } else {
+        expect(staffStatus).toBe(staff)
+      }
     })
   }
 })
@@ -236,7 +243,8 @@ describe('session mutation is staff-only, even for the assigned instructor', () 
       expect((await call(undefined, world.s1)).status).toBe(401)
       // A is the PRIMARY instructor of S1 — relationship grants no mutation right.
       expect((await call(world.aCookie, world.s1)).status).toBe(403)
-      expect((await call(world.staffCookie, world.s1)).status).toBe(501)
+      // Staff is authorized (the mutation itself is proven in the domain suite).
+      expect([401, 403]).not.toContain((await call(world.staffCookie, world.s1)).status)
     })
   }
 })
@@ -355,12 +363,13 @@ describe('role and parameter tampering', () => {
     expect(withBody.status).toBe(403)
   })
 
-  it('a staff mutation stub ignores an injected role downgrade and stays authorized', async () => {
+  it('a staff mutation ignores an injected role downgrade and stays authorized', async () => {
     const response = await sessionsCreate(
       req('POST', world.staffCookie, { role: 'INSTRUCTOR', isAdmin: false }),
     )
-    // Guard passed on the real role; the body is never read.
-    expect(response.status).toBe(501)
+    // Authorization is decided by the session role, never the body: staff is
+    // not blocked (the body then fails domain validation on its own merits).
+    expect([401, 403]).not.toContain(response.status)
   })
 
   it('an instructor body claiming STAFF does not escalate — still 403 (the direction that matters)', async () => {
