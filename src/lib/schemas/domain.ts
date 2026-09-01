@@ -116,3 +116,26 @@ export type CreateRoomInput = z.infer<typeof createRoomSchema>
 export type UpdateRoomInput = z.infer<typeof updateRoomSchema>
 export type CreateSessionInput = z.infer<typeof createSessionSchema>
 export type UpdateSessionInput = z.infer<typeof updateSessionSchema>
+// Appended to src/lib/schemas/domain.ts
+
+const note = z.string().trim().max(1000)
+
+export const createBookingSchema = z
+  .object({ sessionId: z.string().uuid(), memberId: z.string().uuid(), note: note.optional() })
+  .strict()
+
+export const cancelBookingSchema = z.object({ note: note.optional() }).strict()
+
+// A standalone note requires actual text (a NOTE_ADDED event has note NOT NULL).
+export const addNoteSchema = z.object({ note: note.min(1) }).strict()
+
+export const settleBookingSchema = z
+  .object({ status: z.enum(['ATTENDED', 'NO_SHOW']), note: note.optional() })
+  .strict()
+
+export const bookingListQuerySchema = listQuerySchema.extend({
+  sessionId: z.string().uuid().optional(),
+  status: z.enum(['BOOKED', 'WAITLISTED', 'CANCELLED', 'ATTENDED', 'NO_SHOW']).optional(),
+})
+
+export type CreateBookingInput = z.infer<typeof createBookingSchema>
