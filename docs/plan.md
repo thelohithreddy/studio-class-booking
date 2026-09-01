@@ -198,6 +198,36 @@ the F2 race and a crossed-lock deadlock test (7), and recurring boundaries/skips
 concurrency (10). No migration — `session_instructors` (Phase 2) carried everything. Deferred,
 still guarded 501: CSV export, dashboard, alerts.
 
+### Phase 9 — CSV attendance export (Goal 7, second half) (done)
+
+Branch `phase-9-csv-export`. The one deferred half of Goal 7 (the recurring half shipped in Phase
+8): "export a session's attendance — every booking with its member and final status — as a CSV
+file." Protocol: audit → extract the EXACT requirement from the brief (one staff-only per-session
+export, one row per booking, columns = member + final status — not a general bookings CSV, and not
+invented fields) → design/contract doc → adversarial design panel (exfiltration, CSV-correctness,
+assignment-fidelity lenses + verification) → implement → hostile diff review.
+
+Treated as a data-exfiltration boundary. The design panel's one "major" — that the design doc's
+"missing session → 404" was unreachable via the flow it wrote — was REFUTED by the verifier because
+the implementation already does an explicit `classSession.findUnique` existence check before the
+booking query (the doc was under-specified, the code correct); the doc was tightened. Applied
+minors: `X-Content-Type-Options: nosniff` on the download; the CSV-injection guard was hardened to
+catch a formula trigger hidden behind leading spaces/tabs (Excel trims before evaluating, so ` =cmd`
+is still dangerous); the filename proven to be built only from a server-derived date + the validated
+uuid. Kept with rationale: Member Email (staff-only export, staff already have full member-email
+access, email is the stable identity for an attendance record) and the canonical status tokens
+(consistent with the JSON API).
+
+Delivered: the internal RFC 4180 serializer + OWASP formula-injection guard + UTF-8 BOM
+(`src/server/reporting/csv.ts`), the scoped export domain (`attendance.ts`), the implemented
+`GET /api/sessions/[id]/attendance` route, and 32 new tests (374 total): 19 serializer unit tests
+(escaping, Unicode, formula injection, round-trip via the real `csv-parse` parser) and 13 HTTP
+integration tests (staff 200 + headers/BOM/nosniff, instructor 403, unauth 401, missing/malformed
+404, empty header-only export, every-status coverage, no co-instructor row fan-out, cross-session
+isolation, filename safety, data minimization, and a constant-query no-N+1 check). One dev-only
+dependency (`csv-parse`, the round-trip test oracle — never shipped). No migration, no new index.
+Deferred, still guarded 501: dashboard (Goal 8), membership alerts (Goal 10); deployment remains.
+
 ## Retrospective (filled at submission)
 
 - What order did you build in, and why that order? — see table above; final commentary at the end.

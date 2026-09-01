@@ -207,7 +207,7 @@ describe('capability-gated endpoints', () => {
     {
       name: 'GET /sessions/[id]/attendance',
       call: (c) => attendance(req('GET', c), ctx('x')),
-      staff: 501,
+      staff: 'pass',
     },
   ]
 
