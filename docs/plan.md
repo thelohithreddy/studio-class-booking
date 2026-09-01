@@ -228,6 +228,42 @@ isolation, filename safety, data minimization, and a constant-query no-N+1 check
 dependency (`csv-parse`, the round-trip test oracle — never shipped). No migration, no new index.
 Deferred, still guarded 501: dashboard (Goal 8), membership alerts (Goal 10); deployment remains.
 
+### Phase 10 — operational dashboard (Goal 8) (done)
+
+Branch `phase-10-dashboard`. Goal 8: "A dashboard. A landing view shows headline numbers — sessions
+today, bookings made today, no-shows this week, and members currently waitlisted. It also breaks
+bookings down by status and by class, and charts attendance per week over the last eight weeks."
+Protocol: audit → extract the exact requirement + a metric-by-metric matrix → design doc → adversarial
+design panel (authz-leakage / metrics-SQL / UI-a11y lenses + verification) → implement → hostile diff
+review. Staff-only, studio-wide, NO parameters (decisions.md #17/#32).
+
+The design panel earned its keep: it found a BLOCKER (raw `$queryRaw` counts return `bigint`, which
+@prisma/adapter-pg surfaces as JS `BigInt` → `JSON.stringify` throws on every call, empty DB included)
+and a MAJOR (the `width_bucket` chart query, unbounded, dumps all attendance older than 8 weeks into
+bucket 0 and scans full history) — both fixed before implementation landed (`::int` casts; a
+`WHERE starts_at >= w0 AND < w8` bound). Applied minors: `membersWaitlisted` filters to upcoming
+sessions (the "currently" reading, avoiding the Decision-24 orphaned-waitlist inflation); by-class
+gets a `class_id` tiebreaker (Class.title is not unique); the page adds an explicit `!user` →
+/login branch and `force-dynamic`; a request-cached `currentUser()` collapses the layout+page session
+lookup; and the a11y chart became `aria-hidden` decoration over an accessible data table, with an
+"as of" studio-local caption and an explicit all-zero-chart note.
+
+Delivered: `getDashboard(db, now)` (seven concurrent DB aggregations), `GET /api/dashboard`, the
+the staff landing page (a thin client view over the server-authorized API — see below) + accessible
+view, `currentUser()`, and 17 new tests (393 total):
+5 unit (boundary math + the bar-scaling zero-division guard) and 12 integration — every metric
+asserted against a known fixture with hand-computed expectations AND independent direct-SQL oracles,
+half-open day/week boundaries, distinct-member + upcoming-only waitlist, the bounded 8-week chart,
+the sum(byStatus)==sum(byClass)==total consistency invariant, staff-only auth (401/403/200),
+parameter-pollution safety, empty state (+ clean JSON serialization), tiebreak determinism, and a
+constant-query no-N+1 check. EXPLAIN ANALYZE reviewed (<1 ms at ~1500 bookings). A rendering finding
+surfaced only by running the production build: a Server-Component landing that redirects at build
+was statically prerendered and cached by Next 16 (`s-maxage`, identical for every cookie) even with
+`force-dynamic`/`connection()`/`cookies()` — so `/` is the same client-page + API pattern every
+other page uses (data-free static shell, per-request fetch), with authorization enforced server-side
+by `/api/dashboard` (decisions.md #32). No schema change, no new index, no caching/realtime. Deferred,
+still guarded 501: membership alerts (Goal 10); deployment.
+
 ## Retrospective (filled at submission)
 
 - What order did you build in, and why that order? — see table above; final commentary at the end.

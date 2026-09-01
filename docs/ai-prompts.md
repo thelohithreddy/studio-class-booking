@@ -452,3 +452,55 @@ UTF-8 BOM, a scope-before-serialize export domain, and 32 tests (374 total).
   user-controlled byte reaches Content-Disposition). Kept with rationale (both confirmed as
   boundary-crossing-free by the panel): Member Email (staff-only; staff already have full
   member-email access) and canonical status tokens (consistent with the JSON API).
+
+## Phase 10 — operational dashboard (Goal 8)
+
+### Prompt
+
+> PHASE 10 — PRODUCTION-GRADE OPERATIONAL DASHBOARD. Implement ONLY Goal 8. Read the assignment;
+> extract the EXACT Goal 8 requirements; build a requirement→data→authorization→aggregation→UI→test
+> matrix. Authorization applied BEFORE aggregation; never fetch global data then hide it; aggregate
+> in the DB, not React. Reuse policy.ts/scope.ts/guards.ts. Determine staff vs instructor access
+> from the assignment. Define each metric (source, states, scope, date boundary, timezone, empty,
+> zero-denominator). Reuse studio-timezone + half-open date semantics. No speculative index/cache/
+> realtime. Accessible, responsive, minimal client JS. Non-vacuous tests with an independent oracle.
+> Feature branch → PR → CI → merge. Stop after Phase 10.
+
+### What came back
+
+The exact requirement is Goal 8's three sentences (sessions today / bookings made today / no-shows
+this week / members currently waitlisted; bookings by status and by class; attendance per week over
+the last eight weeks). Determined STAFF-ONLY studio-wide (decisions.md #17 + the /api/dashboard stub)
+and NO parameters (a fixed landing view). Designed a metric matrix, ran a 3-lens adversarial panel,
+implemented `getDashboard` (seven concurrent DB aggregations) + `GET /api/dashboard` + the staff
+landing page + accessible view, and added 17 tests (393 total).
+
+### What was wrong, and what was done about it
+
+- **The design panel found a real blocker and a real major before implementation.** BLOCKER: the
+  three raw `$queryRaw` counts return Postgres `bigint`, which @prisma/adapter-pg surfaces as JS
+  `BigInt` — so `Response.json`/`JSON.stringify` throws on EVERY call (empty DB included, since
+  `count(distinct)` returns `0n`), and the by-status/by-class consistency check compares
+  `number === bigint` and fails. Fixed with `::int` casts on every raw count. MAJOR: the
+  `width_bucket` per-week query, run unbounded, buckets every ATTENDED booking older than 8 weeks
+  into bucket 0 and scans all history; fixed with `WHERE starts_at >= w[0] AND < w[8]` (only buckets
+  1..8, index-bounded) and a `bucket → weeks[bucket-1]` map. Both were caught on the design, not in
+  production.
+- **A definition was sharpened.** "members currently waitlisted" now filters to UPCOMING sessions
+  (`starts_at >= now`), because Decision 24 guarantees a member waitlisted onto a passed session
+  keeps a dangling WAITLISTED row — counting those would inflate "currently waitlisted" with members
+  who are no longer waiting. Documented with the alternative.
+- **A rendering bug surfaced only by running the production build.** The first cut made `/` a Server
+  Component that server-renders the dashboard — but Next 16 statically prerendered and cached it
+  (`s-maxage=31536000`, identical for every cookie), because a Server Component that calls
+  `redirect()` at build (no cookies → non-staff → redirect) is captured as a static redirect, which
+  `force-dynamic`, `await connection()`, and a direct `await cookies()` all failed to prevent
+  (verified against `next start`). Switched `/` to the same client-page + API pattern every other
+  page uses — a data-free static shell that fetches `GET /api/dashboard` per request — with the
+  authorization unchanged and server-side (the route's capability guard). A reminder that "prefer
+  server components" meets framework reality, and that only a real build/runtime check caught it.
+- **Determinism + a11y minors applied:** a `class_id` final tiebreaker for by-class (Class.title is
+  not unique); a request-cached `currentUser()` for the layout's session lookup; the decorative chart
+  marked `aria-hidden` with the data table as the accessible source; an "as of <studio-local>"
+  caption and an explicit all-zero-chart note; and the UI bar-scaling guarded so an all-zero chart
+  never yields NaN. EXPLAIN ANALYZE (real, ~1500 bookings, <1 ms) confirmed no new index is warranted.
