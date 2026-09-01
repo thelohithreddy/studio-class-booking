@@ -244,6 +244,18 @@ BigInt JSON friction; (4) the GiST exclusion indexes grow with future sessions b
 stay range-bounded. The booking hot path itself (per-session row lock + `(session_id, status,
 seq)` index) is size-independent per session and does not degrade with global table growth.
 
+## Search uses this schema and its indexes unchanged (Phase 7)
+
+Goal 6's bookings search added no tables, columns or indexes. EXPLAIN of the scoped booking
+search shows the existing Phase-2 indexes carry it: `bookings(status, created_at)` and
+`(created_at)` for the status filter and booked-time sort, `(session_id, status, seq)` for the
+session filter, and `class_sessions(class_id, starts_at)` / `(starts_at)` for the class filter,
+session-time sort and the sessions date range — all index scans, no sequential scan on the
+scoped path. The one unindexed operation is the member name/email ILIKE substring (a substring
+match has no btree support); at studio scale it is negligible and a `pg_trgm` GIN index on
+`lower(member.name)`/`lower(member.email)` is the documented 100x path (decisions.md #26), not
+added now. See docs/architecture.md for the search pipeline.
+
 ## The booking engine uses this schema unchanged (Phase 6)
 
 Phase 6 added no tables or columns — the Phase-2 model already carried the booking lifecycle.

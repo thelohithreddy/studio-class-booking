@@ -26,3 +26,46 @@ export function studioToday(now: Date = new Date()): Date {
 export function isMembershipValid(membershipExpiresOn: Date, now: Date = new Date()): boolean {
   return membershipExpiresOn.getTime() >= studioToday(now).getTime()
 }
+
+/**
+ * The offset (ms) by which the given instant's civil time in `tz` runs ahead
+ * of UTC — computed at that specific instant, so DST is handled correctly.
+ */
+function tzOffsetMs(instant: Date, tz: string): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+      .formatToParts(instant)
+      .map((p) => [p.type, p.value]),
+  ) as Record<string, string>
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  )
+  return asUtc - instant.getTime()
+}
+
+/**
+ * Converts a calendar date (YYYY-MM-DD) to the UTC instant of MIDNIGHT on that
+ * date in STUDIO_TIMEZONE. So a "from"/"to" the studio types as September 1 is
+ * September 1 in the studio's own day, not the server's — consistent with how
+ * membership expiry is judged. DST-correct (the offset is taken at the date).
+ */
+export function studioDateToUtc(isoDate: string, now: Date = new Date()): Date {
+  void now
+  const tz = env().STUDIO_TIMEZONE
+  const naiveUtcMs = new Date(`${isoDate}T00:00:00.000Z`).getTime()
+  return new Date(naiveUtcMs - tzOffsetMs(new Date(naiveUtcMs), tz))
+}

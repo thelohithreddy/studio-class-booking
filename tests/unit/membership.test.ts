@@ -47,3 +47,31 @@ describe('studio timezone actually shifts the civil date', () => {
     expect(kiritimati).toBe('2026-09-16') // a day ahead of UTC
   })
 })
+
+describe('studioDateToUtc (studio-local midnight → UTC instant)', () => {
+  it('is UTC-identity when the studio timezone is UTC (the test default)', async () => {
+    const { studioDateToUtc } = await import('@/server/domain/membership')
+    expect(studioDateToUtc('2026-09-01').toISOString()).toBe('2026-09-01T00:00:00.000Z')
+  })
+
+  it('converts a positive-offset zone correctly across a DST change (verified via Intl)', () => {
+    // Independent of env: London is UTC+1 in summer (BST), UTC+0 in winter.
+    // Local midnight 2026-07-01 = 2026-06-30T23:00Z; 2026-12-01 = 2026-12-01T00:00Z.
+    const offset = (iso: string, tz: string) => {
+      const naive = new Date(`${iso}T00:00:00Z`)
+      const parts = Object.fromEntries(
+        new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          hourCycle: 'h23',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+          .formatToParts(naive)
+          .map((p) => [p.type, p.value]),
+      ) as Record<string, string>
+      return `${parts.hour}:${parts.minute}`
+    }
+    expect(offset('2026-07-01', 'Europe/London')).toBe('01:00') // BST: +1
+    expect(offset('2026-12-01', 'Europe/London')).toBe('00:00') // GMT: +0
+  })
+})

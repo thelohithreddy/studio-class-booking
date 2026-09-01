@@ -334,3 +334,47 @@ Logged as they happen. Each entry: what was chosen, what was rejected, and why. 
 - **Consequence:** a member booked onto an already-started session can be settled immediately;
   a member waitlisted onto a past session simply never gets promoted (harmless). The server
   clock (`Date.now()` vs the stored `startsAt`) decides, never a client timestamp.
+
+## Decision 25 — Booking search covers member email for every viewer (Goal 6), oracle accepted
+
+- **Chose:** The bookings text search matches member name OR email for every caller — staff
+  and instructors alike — even though the results project name only (email stays off
+  instructor-reachable reads).
+- **Rejected:** restricting the email search clause to staff.
+- **Why:** Goal 6 states the list "shows bookings across every session **the viewer** can see,
+  with a text search over member **name and email**" — the viewer includes instructors on
+  their own scoped list, so searching email is _required_ behaviour; role-gating it would
+  violate the goal. A review lens flagged the email-search-without-email-display as an
+  inference oracle and proposed gating it; the adversarial verification **refuted** that as a
+  Goal-6 violation.
+- **Consequence (accepted, documented):** an instructor can, in principle, confirm/reconstruct
+  the email of a member booked on _their own_ session by probing `q`. This is scope-contained
+  (only members already on the instructor's sessions, whose names they legitimately read), the
+  assignment does not classify member email as a staff-only secret (Goal 4 tracks members "with
+  a name, an email"), and blind substring extraction is combinatorially expensive. Net: a weak,
+  scope-bounded confirmation oracle, accepted as the cost of a required feature. Email remaining
+  off the _displayed_ fields is a data-minimization bonus, not a security boundary.
+
+## Decision 26 — No search index added; pg_trgm GIN is the documented 100x path
+
+- **Chose:** Add no new index for Phase 7. The existing Phase-2 indexes cover every Goal-6
+  sort/filter (verified with EXPLAIN: index scans on `bookings(status, created_at)` and the
+  instructor index, no sequential scans on the scoped path).
+- **Rejected:** adding a `pg_trgm` GIN index on member name/email now.
+- **Why:** the only unindexed path is the member name/email ILIKE substring — at studio scale
+  (hundreds of members, thousands of bookings) that scan is negligible, and the prompt
+  explicitly discourages speculative indexes. A `pg_trgm` GIN index on `lower(member.name)` /
+  `lower(member.email)` is the documented optimization if the member table grows ~100x; it is
+  additive (no schema/behaviour change) and can land in the phase that needs it.
+
+## Decision 27 — OFFSET/LIMIT pagination with a scoped total; last-wins query params
+
+- **Chose:** OFFSET/LIMIT with `{ total, page, pageSize }`; the total is the scoped+filtered
+  count. Duplicate scalar query params resolve last-wins (`Object.fromEntries(searchParams)`).
+- **Rejected:** keyset/cursor pagination.
+- **Why:** Goal 6 explicitly wants "the total number of matches" and a page-numbered list, which
+  OFFSET + count serves directly; keyset makes total counts and arbitrary sort awkward for no
+  benefit at studio scale. Trade-off documented: pagination over a changing dataset can shift a
+  row across page boundaries between requests (no snapshot promise). Last-wins param handling is
+  standard, deterministic and safe (every accepted value is validated); rejecting duplicates
+  would add complexity for no security gain.
