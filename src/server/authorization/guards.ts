@@ -45,6 +45,12 @@ const SESSION_VIEW_SELECT = {
   bookedCount: true,
   primaryInstructorId: true,
   roomId: true,
+  // Safe display relations (Goal 5's "my sessions" needs names, not UUIDs).
+  // class title/discipline, room name and instructor name are not PII; member
+  // and booking relations are deliberately excluded.
+  class: { select: { title: true, discipline: true } },
+  room: { select: { name: true } },
+  primaryInstructor: { select: { id: true, name: true } },
 } as const
 
 export type SessionView = Prisma.ClassSessionGetPayload<{ select: typeof SESSION_VIEW_SELECT }>

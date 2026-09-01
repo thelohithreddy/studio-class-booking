@@ -1,13 +1,21 @@
 // app/api/members/[id]/route.ts
+import { db } from '@/lib/db'
 import { handleRoute, type RouteContext } from '@/lib/api/errors'
 import { requireCapability } from '@/server/authorization/guards'
-import { notImplemented } from '@/server/authorization/not-implemented'
+import { updateMemberSchema } from '@/lib/schemas/domain'
+import { getMember, updateMember } from '@/server/domain/members'
 
-// PATCH /api/members/[id] — edit member / set expiry (staff only). Phase 5.
-// Binding rule for when this is implemented: parse the body through a
-// zod .strict() schema, map fields to Prisma explicitly, and take identity/
-// role only from the SessionUser the guard returned — never spread req.json().
-export const PATCH = handleRoute<RouteContext<'id'>>(async (req) => {
+export const GET = handleRoute<RouteContext<'id'>>(async (req, ctx) => {
   await requireCapability(req, 'member:manage')
-  return notImplemented('Editing members')
+  const { id } = await ctx.params
+  return Response.json({ member: await getMember(db(), id) })
+})
+
+// PATCH /api/members/[id] — staff-only. Editing membership expiry persists the
+// value the later alert lifecycle reads; no alert/dismissal logic here.
+export const PATCH = handleRoute<RouteContext<'id'>>(async (req, ctx) => {
+  await requireCapability(req, 'member:manage')
+  const { id } = await ctx.params
+  const input = updateMemberSchema.parse(await req.json().catch(() => ({})))
+  return Response.json({ member: await updateMember(db(), id, input) })
 })

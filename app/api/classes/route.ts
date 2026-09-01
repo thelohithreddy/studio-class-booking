@@ -1,13 +1,24 @@
 // app/api/classes/route.ts
+import { db } from '@/lib/db'
 import { handleRoute } from '@/lib/api/errors'
 import { requireCapability } from '@/server/authorization/guards'
-import { notImplemented } from '@/server/authorization/not-implemented'
+import { createClassSchema, listQuerySchema } from '@/lib/schemas/domain'
+import { createClass, listClasses } from '@/server/domain/classes'
 
-// POST /api/classes — create a class (staff only). Business logic: Phase 5.
-// Binding rule for when this is implemented: parse the body through a
-// zod .strict() schema, map fields to Prisma explicitly, and take identity/
-// role only from the SessionUser the guard returned — never spread req.json().
+// GET /api/classes — staff-only list. Default excludes archived classes;
+// ?includeArchived=true includes them. Paginated + searchable, server-side.
+export const GET = handleRoute(async (req) => {
+  await requireCapability(req, 'class:manage')
+  const url = new URL(req.url)
+  const { page, pageSize, q } = listQuerySchema.parse(Object.fromEntries(url.searchParams))
+  const includeArchived = url.searchParams.get('includeArchived') === 'true'
+  return Response.json(await listClasses(db(), { page, pageSize, q, includeArchived }))
+})
+
+// POST /api/classes — staff-only create.
 export const POST = handleRoute(async (req) => {
   await requireCapability(req, 'class:manage')
-  return notImplemented('Creating classes')
+  const input = createClassSchema.parse(await req.json().catch(() => ({})))
+  const created = await createClass(db(), input)
+  return Response.json({ class: created }, { status: 201 })
 })

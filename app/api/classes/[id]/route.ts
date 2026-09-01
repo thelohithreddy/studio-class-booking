@@ -1,13 +1,19 @@
 // app/api/classes/[id]/route.ts
+import { db } from '@/lib/db'
 import { handleRoute, type RouteContext } from '@/lib/api/errors'
 import { requireCapability } from '@/server/authorization/guards'
-import { notImplemented } from '@/server/authorization/not-implemented'
+import { updateClassSchema } from '@/lib/schemas/domain'
+import { getClass, updateClass } from '@/server/domain/classes'
 
-// PATCH /api/classes/[id] — edit/archive/restore a class (staff only). Phase 5.
-// Binding rule for when this is implemented: parse the body through a
-// zod .strict() schema, map fields to Prisma explicitly, and take identity/
-// role only from the SessionUser the guard returned — never spread req.json().
-export const PATCH = handleRoute<RouteContext<'id'>>(async (req) => {
+export const GET = handleRoute<RouteContext<'id'>>(async (req, ctx) => {
   await requireCapability(req, 'class:manage')
-  return notImplemented('Editing classes')
+  const { id } = await ctx.params
+  return Response.json({ class: await getClass(db(), id) })
+})
+
+export const PATCH = handleRoute<RouteContext<'id'>>(async (req, ctx) => {
+  await requireCapability(req, 'class:manage')
+  const { id } = await ctx.params
+  const input = updateClassSchema.parse(await req.json().catch(() => ({})))
+  return Response.json({ class: await updateClass(db(), id, input) })
 })
