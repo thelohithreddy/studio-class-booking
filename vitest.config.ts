@@ -39,6 +39,17 @@ export default defineConfig({
           fileParallelism: false,
         },
       },
+      {
+        // Component/journey tests for the frontend. jsdom, no database — the API
+        // is mocked, so these stay hermetic and fast.
+        extends: true,
+        test: {
+          name: 'frontend',
+          environment: 'jsdom',
+          include: ['tests/frontend/**/*.test.tsx'],
+          setupFiles: ['tests/frontend/setup.ts'],
+        },
+      },
     ],
   },
 })

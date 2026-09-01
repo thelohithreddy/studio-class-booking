@@ -1,170 +1,242 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 
-import { api, Button, Field, Notice, useResource } from '../ui'
-
-interface Session {
-  id: string
-  startsAt: string
-  endsAt: string
-  capacity: number
-  bookedCount: number
-  class: { title: string; discipline: string }
-  room: { name: string }
-  primaryInstructor: { id: string; name: string }
-}
-
-interface ClassLite {
-  id: string
-  title: string
-}
-interface RoomLite {
-  id: string
-  name: string
-}
+import { qk, useApiQuery } from '@app/_lib/query'
+import { formatDuration, formatTimeRange } from '@app/_lib/format'
+import { sessionFill } from '@app/_lib/status'
+import type { ClassListResponse, SessionListItem, SessionListResponse } from '@app/_lib/types'
+import {
+  AsyncBoundary,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  PageHeader,
+  Pagination,
+  Pill,
+  SelectInput,
+  SkeletonRows,
+  TextInput,
+} from '@app/_components/ui'
+import { SessionFormDrawer } from '@app/_components/session-forms'
+import { IconClock, IconPin, IconPlus, IconSessions, IconUser } from '@app/_components/icons'
+import { useIsStaff } from '../_shell/user-context'
 
 export default function SessionsPage() {
-  const { data, error, loading, reload } = useResource<{ sessions: Session[]; total: number }>(
-    '/api/sessions',
+  const staff = useIsStaff()
+  const [classId, setClassId] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [page, setPage] = useState(1)
+  const [scheduling, setScheduling] = useState(false)
+
+  const params = new URLSearchParams({ page: String(page), pageSize: '20' })
+  if (classId) params.set('classId', classId)
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  const sessions = useApiQuery<SessionListResponse>(
+    qk.sessions({ classId, from, to, page }),
+    `/api/sessions?${params.toString()}`,
   )
-  // These lists are staff-only; an instructor's fetch 403s and the pickers stay empty
-  // (their view is read-only anyway).
-  const classes = useResource<{ classes: ClassLite[] }>('/api/classes')
-  const rooms = useResource<{ rooms: RoomLite[] }>('/api/rooms')
-  const canCreateData = classes.data && rooms.data && !classes.error && !rooms.error
 
-  const [form, setForm] = useState({
-    classId: '',
-    startsAt: '',
-    primaryInstructorId: '',
-    roomId: '',
-    duration: '',
-    capacity: '',
-  })
-  const [formError, setFormError] = useState<string | null>(null)
-
-  async function create(e: React.FormEvent) {
-    e.preventDefault()
-    setFormError(null)
-    try {
-      await api('/api/sessions', {
-        method: 'POST',
-        body: JSON.stringify({
-          classId: form.classId,
-          startsAt: new Date(form.startsAt).toISOString(),
-          primaryInstructorId: form.primaryInstructorId,
-          roomId: form.roomId,
-          ...(form.duration ? { durationMinutes: Number(form.duration) } : {}),
-          ...(form.capacity ? { capacity: Number(form.capacity) } : {}),
-        }),
-      })
-      setForm({
-        classId: '',
-        startsAt: '',
-        primaryInstructorId: '',
-        roomId: '',
-        duration: '',
-        capacity: '',
-      })
-      reload()
-    } catch (err) {
-      setFormError((err as Error).message)
-    }
+  const hasFilters = Boolean(classId || from || to)
+  function resetFilters() {
+    setClassId('')
+    setFrom('')
+    setTo('')
+    setPage(1)
   }
 
   return (
-    <section className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold">Sessions</h1>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={staff ? 'Sessions' : 'My sessions'}
+        description={
+          staff
+            ? 'Every scheduled session. Open one to manage bookings, attendance, and instructors.'
+            : 'Sessions where you’re the primary instructor or a co-instructor.'
+        }
+        actions={
+          staff ? (
+            <Button icon={<IconPlus className="size-4" />} onClick={() => setScheduling(true)}>
+              Schedule session
+            </Button>
+          ) : undefined
+        }
+      />
 
-      {canCreateData ? (
-        <form
-          onSubmit={create}
-          className="grid grid-cols-2 gap-3 rounded border border-slate-200 p-4 dark:border-slate-800"
+      <Card className="p-3 sm:p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          {staff ? (
+            <ClassFilter
+              value={classId}
+              onChange={(v) => {
+                setClassId(v)
+                setPage(1)
+              }}
+            />
+          ) : null}
+          <TextInput
+            label="From"
+            type="date"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value)
+              setPage(1)
+            }}
+            containerClassName="sm:w-40"
+          />
+          <TextInput
+            label="To"
+            type="date"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value)
+              setPage(1)
+            }}
+            containerClassName="sm:w-40"
+          />
+          {hasFilters ? (
+            <Button variant="ghost" size="sm" onClick={resetFilters} className="sm:mb-0.5">
+              Clear
+            </Button>
+          ) : null}
+        </div>
+      </Card>
+
+      <Card className="overflow-hidden">
+        <AsyncBoundary
+          query={sessions}
+          skeleton={
+            <div className="p-4">
+              <SkeletonRows rows={6} />
+            </div>
+          }
+          isEmpty={(d) => d.sessions.length === 0}
+          empty={
+            <EmptyState
+              icon={<IconSessions className="size-5" />}
+              title={hasFilters ? 'No sessions match these filters' : 'No sessions scheduled'}
+              description={
+                hasFilters
+                  ? 'Try widening the date range or clearing the class filter.'
+                  : staff
+                    ? 'Schedule a session, or generate a recurring series from a class.'
+                    : 'You have no sessions assigned yet.'
+              }
+              action={
+                staff && !hasFilters ? (
+                  <Button onClick={() => setScheduling(true)}>Schedule session</Button>
+                ) : hasFilters ? (
+                  <Button variant="secondary" onClick={resetFilters}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
+          }
         >
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Class</span>
-            <select
-              required
-              value={form.classId}
-              onChange={(e) => setForm({ ...form, classId: e.target.value })}
-              className="rounded border border-slate-300 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-900"
-            >
-              <option value="">Select…</option>
-              {classes.data?.classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.title}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Room</span>
-            <select
-              required
-              value={form.roomId}
-              onChange={(e) => setForm({ ...form, roomId: e.target.value })}
-              className="rounded border border-slate-300 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-900"
-            >
-              <option value="">Select…</option>
-              {rooms.data?.rooms.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Field
-            label="Primary instructor (user id)"
-            value={form.primaryInstructorId}
-            onChange={(e) => setForm({ ...form, primaryInstructorId: e.target.value })}
-            required
-          />
-          <Field
-            label="Starts at"
-            type="datetime-local"
-            value={form.startsAt}
-            onChange={(e) => setForm({ ...form, startsAt: e.target.value })}
-            required
-          />
-          <Field
-            label="Duration (min, optional)"
-            type="number"
-            value={form.duration}
-            onChange={(e) => setForm({ ...form, duration: e.target.value })}
-          />
-          <Field
-            label="Capacity (optional)"
-            type="number"
-            value={form.capacity}
-            onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-          />
-          <div className="col-span-2 flex items-center gap-3">
-            <Button type="submit">Schedule session</Button>
-            <Notice error={formError} />
-          </div>
-        </form>
-      ) : (
-        <p className="text-sm text-slate-500">Your scheduled sessions.</p>
-      )}
+          {(data) => (
+            <>
+              <ul className="divide-y divide-line">
+                {data.sessions.map((s) => (
+                  <SessionRow key={s.id} session={s} />
+                ))}
+              </ul>
+              <Pagination
+                page={data.page}
+                pageSize={data.pageSize}
+                total={data.total}
+                onPageChange={setPage}
+              />
+            </>
+          )}
+        </AsyncBoundary>
+      </Card>
 
-      {loading ? <p className="text-sm text-slate-500">Loading…</p> : null}
-      <Notice error={error} />
-      {data && data.sessions.length === 0 ? (
-        <p className="text-sm text-slate-500">No sessions.</p>
-      ) : null}
-      <ul className="flex flex-col gap-2">
-        {data?.sessions.map((s) => (
-          <li
-            key={s.id}
-            className="rounded border border-slate-200 px-4 py-2 text-sm dark:border-slate-800"
+      {staff ? <SessionFormDrawer open={scheduling} onClose={() => setScheduling(false)} /> : null}
+    </div>
+  )
+}
+
+function ClassFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const classes = useApiQuery<ClassListResponse>(
+    qk.classes({ filter: true }),
+    '/api/classes?pageSize=100',
+  )
+  return (
+    <SelectInput
+      label="Class"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      containerClassName="sm:w-56"
+    >
+      <option value="">All classes</option>
+      {classes.data?.classes.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.title}
+        </option>
+      ))}
+    </SelectInput>
+  )
+}
+
+function SessionRow({ session }: { session: SessionListItem }) {
+  const fill = sessionFill(session.bookedCount, session.capacity)
+  const duration = Math.round(
+    (new Date(session.endsAt).getTime() - new Date(session.startsAt).getTime()) / 60000,
+  )
+  return (
+    <li>
+      <Link
+        href={`/sessions/${session.id}`}
+        className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-surface-2/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:flex-row sm:items-center"
+      >
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="flex w-14 shrink-0 flex-col items-center rounded-md border border-line bg-surface-2 py-1.5 text-center">
+            <span className="text-[0.65rem] font-semibold text-subtle uppercase">
+              {new Date(session.startsAt).toLocaleDateString(undefined, { month: 'short' })}
+            </span>
+            <span className="tabular text-lg leading-none font-semibold text-fg">
+              {new Date(session.startsAt).toLocaleDateString(undefined, { day: 'numeric' })}
+            </span>
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-semibold text-fg">{session.class.title}</p>
+              <Pill>{session.class.discipline}</Pill>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+              <span className="inline-flex items-center gap-1">
+                <IconClock className="size-3.5" />
+                {formatTimeRange(session.startsAt, session.endsAt)} · {formatDuration(duration)}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <IconPin className="size-3.5" />
+                {session.room.name}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <IconUser className="size-3.5" />
+                {session.primaryInstructor.name}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2.5">
+          <span className="tabular text-sm font-medium text-muted">
+            {session.bookedCount}/{session.capacity}
+          </span>
+          <Badge
+            tone={fill.tone}
+            dot
+            title={`${session.bookedCount} of ${session.capacity} spots booked`}
           >
-            <strong>{s.class.title}</strong> · {new Date(s.startsAt).toLocaleString()} –{' '}
-            {new Date(s.endsAt).toLocaleTimeString()} · {s.room.name} · {s.primaryInstructor.name} ·{' '}
-            {s.bookedCount}/{s.capacity}
-          </li>
-        ))}
-      </ul>
-    </section>
+            {fill.label}
+          </Badge>
+        </div>
+      </Link>
+    </li>
   )
 }

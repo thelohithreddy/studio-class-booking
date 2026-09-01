@@ -37,6 +37,9 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.6",
     "@types/node": "26.4.0",
     "@types/pg": "^8.23.1",
     "@types/react": "19.2.18",
@@ -45,6 +48,7 @@
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.3",
     "eslint-config-prettier": "10.1.8",
+    "jsdom": "^25.0.1",
     "prettier": "3.9.6",
     "prisma": "7.10.0",
     "tailwindcss": "4.3.3",

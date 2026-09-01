@@ -1,137 +1,228 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 
-import { api, Button, Field, Notice, useResource } from '../ui'
+import { apiSend } from '@app/_lib/api'
+import { qk, useApiMutation, useApiQuery } from '@app/_lib/query'
+import { useDebouncedValue } from '@app/_lib/use-debounced'
+import { formatDuration, pluralize } from '@app/_lib/format'
+import { classState } from '@app/_lib/status'
+import type { ClassDTO, ClassListResponse, ClassResponse } from '@app/_lib/types'
+import {
+  AsyncBoundary,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  LinkButton,
+  Pagination,
+  PageHeader,
+  Pill,
+  SearchInput,
+  SkeletonRows,
+  StatusBadge,
+  useConfirm,
+  useToast,
+} from '@app/_components/ui'
+import { IconArchive, IconClasses, IconEdit, IconPlus, IconSearch } from '@app/_components/icons'
+import { ClassFormDrawer } from '@app/_components/class-form'
 
-interface Klass {
-  id: string
-  title: string
-  discipline: string
-  defaultDurationMinutes: number
-  defaultCapacity: number
-  archivedAt: string | null
-}
+type Editing = { mode: 'create' } | { mode: 'edit'; cls: ClassDTO } | null
 
 export default function ClassesPage() {
-  const [includeArchived, setIncludeArchived] = useState(false)
-  const { data, error, loading, reload } = useResource<{ classes: Klass[]; total: number }>(
-    `/api/classes?includeArchived=${includeArchived}`,
+  const [rawQuery, setRawQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [showArchived, setShowArchived] = useState(false)
+  const [editing, setEditing] = useState<Editing>(null)
+  const q = useDebouncedValue(rawQuery.trim(), 300)
+
+  const params = new URLSearchParams({ page: String(page), pageSize: '12' })
+  if (q) params.set('q', q)
+  if (showArchived) params.set('includeArchived', 'true')
+  const classes = useApiQuery<ClassListResponse>(
+    qk.classes({ q, page, showArchived }),
+    `/api/classes?${params.toString()}`,
   )
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    discipline: '',
-    duration: '60',
-    capacity: '20',
-  })
-  const [formError, setFormError] = useState<string | null>(null)
 
-  async function create(e: React.FormEvent) {
-    e.preventDefault()
-    setFormError(null)
-    try {
-      await api('/api/classes', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: form.title,
-          description: form.description,
-          discipline: form.discipline,
-          defaultDurationMinutes: Number(form.duration),
-          defaultCapacity: Number(form.capacity),
-        }),
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Classes"
+        description="The templates your sessions are scheduled from — each carries a default duration and capacity."
+        actions={
+          <Button
+            icon={<IconPlus className="size-4" />}
+            onClick={() => setEditing({ mode: 'create' })}
+          >
+            New class
+          </Button>
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="w-full max-w-sm">
+          <SearchInput
+            value={rawQuery}
+            onChange={(e) => {
+              setRawQuery(e.target.value)
+              setPage(1)
+            }}
+            placeholder="Search by title or discipline…"
+            aria-label="Search classes"
+          />
+        </div>
+        <Checkbox
+          label="Show archived"
+          checked={showArchived}
+          onChange={(e) => {
+            setShowArchived(e.target.checked)
+            setPage(1)
+          }}
+        />
+      </div>
+
+      <AsyncBoundary
+        query={classes}
+        skeleton={
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SkeletonRows rows={6} />
+          </div>
+        }
+        isEmpty={(d) => d.classes.length === 0}
+        empty={
+          q ? (
+            <Card>
+              <EmptyState
+                icon={<IconSearch className="size-5" />}
+                title="No classes match your search"
+                description={`Nothing found for “${q}”.`}
+              />
+            </Card>
+          ) : (
+            <Card>
+              <EmptyState
+                icon={<IconClasses className="size-5" />}
+                title="No classes yet"
+                description="Create your first class — a title, discipline, and the defaults each session inherits. You’ll schedule sessions from it next."
+                action={
+                  <Button
+                    icon={<IconPlus className="size-4" />}
+                    onClick={() => setEditing({ mode: 'create' })}
+                  >
+                    New class
+                  </Button>
+                }
+              />
+            </Card>
+          )
+        }
+      >
+        {(data) => (
+          <div className="flex flex-col gap-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {data.classes.map((cls) => (
+                <ClassCard
+                  key={cls.id}
+                  cls={cls}
+                  onEdit={() => setEditing({ mode: 'edit', cls })}
+                />
+              ))}
+            </div>
+            {data.total > data.pageSize ? (
+              <Card>
+                <Pagination
+                  page={data.page}
+                  pageSize={data.pageSize}
+                  total={data.total}
+                  onPageChange={setPage}
+                />
+              </Card>
+            ) : null}
+          </div>
+        )}
+      </AsyncBoundary>
+
+      <ClassFormDrawer
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        cls={editing?.mode === 'edit' ? editing.cls : null}
+      />
+    </div>
+  )
+}
+
+function ClassCard({ cls, onEdit }: { cls: ClassDTO; onEdit: () => void }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const archived = cls.archivedAt !== null
+
+  const archiveToggle = useApiMutation(
+    () =>
+      apiSend<ClassResponse>(`/api/classes/${cls.id}/${archived ? 'restore' : 'archive'}`, 'POST'),
+    {
+      invalidate: [qk.classes(), qk.class(cls.id)],
+      onSuccess: () => toast.success(archived ? 'Class restored' : 'Class archived'),
+      onError: (e) => toast.error('Could not update class', e.message),
+    },
+  )
+
+  async function toggleArchive() {
+    if (!archived) {
+      const ok = await confirm({
+        title: `Archive “${cls.title}”?`,
+        description:
+          'It will be hidden from default views. Existing sessions and bookings are kept, and you can restore it anytime.',
+        confirmLabel: 'Archive class',
       })
-      setForm({ title: '', description: '', discipline: '', duration: '60', capacity: '20' })
-      reload()
-    } catch (err) {
-      setFormError((err as Error).message)
+      if (!ok) return
     }
-  }
-
-  async function toggle(k: Klass) {
-    await api(`/api/classes/${k.id}/${k.archivedAt ? 'restore' : 'archive'}`, { method: 'POST' })
-    reload()
+    archiveToggle.mutate()
   }
 
   return (
-    <section className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold">Classes</h1>
-
-      <form
-        onSubmit={create}
-        className="grid grid-cols-2 gap-3 rounded border border-slate-200 p-4 dark:border-slate-800"
-      >
-        <Field
-          label="Title"
-          value={form.title}
-          onChange={(e) => setForm({ ...form, title: e.target.value })}
-          required
-        />
-        <Field
-          label="Discipline"
-          value={form.discipline}
-          onChange={(e) => setForm({ ...form, discipline: e.target.value })}
-          required
-        />
-        <Field
-          label="Default duration (min)"
-          type="number"
-          value={form.duration}
-          onChange={(e) => setForm({ ...form, duration: e.target.value })}
-          required
-        />
-        <Field
-          label="Default capacity"
-          type="number"
-          value={form.capacity}
-          onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-          required
-        />
-        <label className="col-span-2 flex flex-col gap-1 text-sm">
-          <span className="font-medium">Description</span>
-          <textarea
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="rounded border border-slate-300 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-900"
-          />
-        </label>
-        <div className="col-span-2 flex items-center gap-3">
-          <Button type="submit">Add class</Button>
-          <Notice error={formError} />
-        </div>
-      </form>
-
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={includeArchived}
-          onChange={(e) => setIncludeArchived(e.target.checked)}
-        />
-        Show archived
-      </label>
-
-      {loading ? <p className="text-sm text-slate-500">Loading…</p> : null}
-      <Notice error={error} />
-      {data && data.classes.length === 0 ? (
-        <p className="text-sm text-slate-500">No classes yet.</p>
-      ) : null}
-      <ul className="flex flex-col gap-2">
-        {data?.classes.map((k) => (
-          <li
-            key={k.id}
-            className="flex items-center justify-between rounded border border-slate-200 px-4 py-2 text-sm dark:border-slate-800"
+    <Card className="flex flex-col p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            href={`/classes/${cls.id}`}
+            className="truncate text-base font-semibold text-fg hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
-            <span>
-              <strong>{k.title}</strong> · {k.discipline} · {k.defaultDurationMinutes}min · cap{' '}
-              {k.defaultCapacity}
-              {k.archivedAt ? <em className="ml-2 text-slate-400">archived</em> : null}
+            {cls.title}
+          </Link>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <Pill>{cls.discipline}</Pill>
+            <span className="text-xs text-muted">
+              {formatDuration(cls.defaultDurationMinutes)} ·{' '}
+              {pluralize(cls.defaultCapacity, 'spot')}
             </span>
-            <button onClick={() => toggle(k)} className="text-slate-500 hover:underline">
-              {k.archivedAt ? 'Restore' : 'Archive'}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
+          </div>
+        </div>
+        <StatusBadge meta={classState(cls.archivedAt)} />
+      </div>
+
+      {cls.description ? (
+        <p className="mt-3 line-clamp-2 text-sm text-muted">{cls.description}</p>
+      ) : null}
+
+      <div className="mt-4 flex items-center gap-1 border-t border-line pt-3">
+        <LinkButton href={`/classes/${cls.id}`} variant="subtle" size="sm">
+          Open
+        </LinkButton>
+        <Button variant="ghost" size="sm" icon={<IconEdit className="size-4" />} onClick={onEdit}>
+          Edit
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<IconArchive className="size-4" />}
+          onClick={toggleArchive}
+          loading={archiveToggle.isPending}
+          className="ml-auto"
+        >
+          {archived ? 'Restore' : 'Archive'}
+        </Button>
+      </div>
+    </Card>
   )
 }

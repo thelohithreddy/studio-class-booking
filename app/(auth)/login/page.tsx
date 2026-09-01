@@ -1,9 +1,18 @@
-// app/(auth)/login/page.tsx
 'use client'
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { Button } from '@app/_components/ui/button'
+import { TextInput } from '@app/_components/ui/form'
+import { Callout } from '@app/_components/ui/feedback'
+
+/**
+ * Sign-in. A successful login is HTTP 204 (identity arrives only as the session
+ * cookie), so we push to the dashboard and let the (app) layout resolve the
+ * user. Error copy is deliberately generic for credentials (no account
+ * enumeration) and specific for rate-limiting and connectivity.
+ */
 export default function LoginPage() {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
@@ -22,7 +31,7 @@ export default function LoginPage() {
     }).catch(() => null)
 
     if (response?.ok) {
-      router.push('/')
+      router.replace('/')
       router.refresh()
       return
     }
@@ -31,51 +40,70 @@ export default function LoginPage() {
     if (response === null) {
       setError('Could not reach the server — check your connection and try again.')
     } else if (response.status === 429) {
-      setError('Too many attempts. Please wait a few minutes.')
+      setError('Too many attempts. Please wait a few minutes and try again.')
     } else if (response.status === 400 || response.status === 401) {
-      setError('Invalid email or password.')
+      setError('That email and password don’t match. Please try again.')
     } else {
       setError('Something went wrong. Please try again.')
     }
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-      <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
-        <label className="flex flex-col gap-1 text-sm">
-          Email
-          <input
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            className="rounded border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Password
-          <input
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            className="rounded border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
-          />
-        </label>
-        {error ? (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-            {error}
-          </p>
-        ) : null}
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded bg-slate-900 px-3 py-2 text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
-        >
-          {pending ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
+    <main className="flex min-h-screen items-center justify-center bg-canvas px-4 py-10">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          <span className="flex size-11 items-center justify-center rounded-xl bg-brand text-brand-fg shadow-sm">
+            <svg
+              viewBox="0 0 24 24"
+              className="size-6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.1"
+              aria-hidden="true"
+            >
+              <path d="M6 15V9M10 18V6M14 16V8M18 13v-2" strokeLinecap="round" />
+            </svg>
+          </span>
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight text-fg">Sign in to Cadence</h1>
+            <p className="mt-1 text-sm text-muted">Studio scheduling &amp; membership operations</p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-line bg-surface p-6 shadow-sm">
+          <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+            <TextInput
+              label="Email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@studio.com"
+              required
+              autoFocus
+            />
+            <TextInput
+              label="Password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="••••••••"
+              required
+            />
+            {error ? (
+              <Callout tone="danger" role="alert">
+                {error}
+              </Callout>
+            ) : null}
+            <Button type="submit" size="lg" loading={pending} className="mt-1 w-full">
+              {pending ? 'Signing in…' : 'Sign in'}
+            </Button>
+          </form>
+        </div>
+
+        <p className="mt-6 text-center text-xs text-subtle">
+          Access is managed by your studio administrator.
+        </p>
+      </div>
     </main>
   )
 }
