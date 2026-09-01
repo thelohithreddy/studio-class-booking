@@ -216,3 +216,56 @@ sessionScopeWhere(user) }`, derived (not hand-copied) from the session rule, so 
 - Judgment call recorded rather than deferred: the panel asked whether attendance export /
   dashboard should be resource-scoped for instructors. Decided permanently staff-only
   (decisions.md #17) with the migration path documented — the honest reading of Goals 7/8.
+
+## Phase 5 — domain CRUD (classes, members, rooms, sessions)
+
+### Prompt
+
+> PHASE 5 — CLASSES + MEMBERS + ROOMS + SESSIONS. First real business-domain phase. CRUD with
+> session default inheritance and overrides, conflict validation (room + primary instructor,
+> half-open intervals), archive/restore, staff-only mutations, instructor read scope. Reuse
+> the existing auth/authz/error/test architecture. Do NOT implement booking/waitlist/etc.
+> Full conflict-interval matrix, concurrency test, authorization attack tests. Stop after
+> Phase 5.
+
+### What came back
+
+A design doc, then the adversarial panel (a Prisma/PG runtime prober plus domain-architect,
+pentester and phase-compliance lenses with verification), then implementation and a hostile
+diff review.
+
+### What was wrong, and what was done about it
+
+- **The error-translation design assumed the wrong Prisma shape.** It keyed on the raw
+  SQLSTATE (`err.code === '23505'`). A review lens ran the real constraints and found Prisma
+  over the pg adapter throws `P2002`/`P2003`/`P2039` — with exclusion AND check both as
+  `P2039` and the SQLSTATE only nested at `cause.code`. The dedicated prober happened to
+  return a stub, so I captured every real error shape directly against the database
+  (`P2002` with `cause.constraint.index`, `P2039` with `cause.code` 23P01 vs 23514, the
+  exclusion constraint name only in `cause.message`) and rewrote `db-errors.ts` and its unit
+  test to the real shapes — plus a test asserting no constraint name or row detail leaks
+  into any response (decisions.md #18). The lesson: when an agent's probe returns nothing
+  usable, verify the fact yourself rather than trusting the design's assumption.
+- **PATCH /sessions had asymmetric validation** — three reviewers flagged that a staff user
+  could assign a STAFF (non-instructor) user as a session's primary instructor on edit, since
+  there is no DB backstop for the instructor-role rule (the FK only proves existence). My
+  implementation already re-validated on change; I added the explicit 422 test the panel
+  demanded.
+- **Goal 5's instructor "my sessions" list returned bare UUIDs** — the scoped read had no
+  class/room/instructor names, and the name-resolving endpoints are staff-only. Enriched the
+  scoped read and list with SAFE display relations (class title/discipline, room name,
+  instructor name) while keeping all member/booking data out.
+- **Malformed path uuids would 500** (Prisma P2007) on the new id routes — added
+  `parseIdOr404` so they 404 identically to an absent row, and uuid-validated the `?classId`
+  filter (else a non-uuid 500s).
+- **`z.string().datetime()` silently rejects numeric-offset instants** — the design already
+  used `{ offset: true }`; the probe confirmed it was necessary.
+- **The hostile diff review (re-run after the machine slept mid-review) surfaced a verified
+  major** two lenses reproduced independently: member `membershipExpiresOn` used a shape-only
+  regex, so `2026-02-30` was silently stored as `2026-03-02` (corrupting the field Goals 4
+  and 10 depend on) and `2026-13-40` threw a raw 500. Fixed with `z.iso.date()` (real
+  calendar validation) plus unit and integration tests. The review also bounded the sessions
+  list (the one unbounded list endpoint), made session delete idempotent (double delete → 404,
+  not a P2025 500), tightened PATCH to validate the resolved instructor role rather than only a
+  changed one, and wired the list routes through the previously-dead `listQuerySchema`
+  (out-of-range pagination is now a clean 400).

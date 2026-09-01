@@ -110,6 +110,53 @@ per-instructor advisory lock in-transaction; the `booked_count` CHECK is the DB 
 future scoped CSV export must authorize the requested session _before_ streaming, so
 `/api/sessions/[id]/attendance` can never become an exfiltration endpoint.
 
+## Domain layer (Phase 5)
+
+The management surface for the four scheduling entities follows the established pipeline with
+a domain-service layer between the routes and Prisma:
+
+```
+route (thin)  →  handleRoute (origin, size, taxonomy, no-store)
+              →  requireCapability / requireSessionView  (authorize)
+              →  zod .strict() parse                     (validate the body)
+              →  src/server/domain/{classes,members,rooms,sessions}  (business rules)
+              →  Prisma  →  Postgres
+```
+
+- **Services** (`src/server/domain/*`) hold every business rule — default inheritance,
+  reference validation, conflict pre-checks, lifecycle transitions — and take the Prisma
+  client plus already-validated input. Routes stay thin (parse → guard → call → respond).
+- **Validation** (`src/lib/schemas/domain.ts`) is one zod `.strict()` schema per write:
+  unknown or server-managed keys (`id`, `bookedCount`, `endsAt`, `archivedAt`, `createdAt`,
+  a member `password`/`role`) are a 400, never silently dropped. Path ids are uuid-validated
+  (`parseIdOr404`) so a malformed id is a 404, not a Prisma-500.
+- **Database-error translation** (`src/lib/api/db-errors.ts`) turns a constraint violation
+  into a clean 409/422 — the application pre-checks for a friendly error, and the Phase-2
+  constraints (unique, GiST overlap exclusion, the `booked_count` CHECK, RESTRICT FKs) are
+  the race-safe backstop. No raw Postgres text, SQLSTATE, constraint name or row data ever
+  reaches the client.
+
+**Time and conflict semantics.** A session's `startsAt` is an instant (ISO-8601 with an
+offset, stored UTC); `endsAt = startsAt + durationMinutes`. Overlap is half-open `[start,
+end)`: adjacent sessions are allowed; same-start, partial, contained and containing overlaps
+conflict — for both the room and the primary instructor. The Phase-2 GiST exclusion
+constraints enforce this at the database (so two concurrent creates for the same slot can
+never both land — verified with an 8-way concurrent test); the service's interval pre-check
+provides the friendly 409 in the common case. Studio-timezone display decomposition remains a
+frontend-phase concern (`STUDIO_TIMEZONE` reserved).
+
+**Error taxonomy** (extends Phase 3/4): 400 request shape/bounds · 401 unauthenticated · 403
+role-forbidden · 404 absent/hidden/malformed-id resource · 409 domain conflict (duplicate
+name/email, room/instructor overlap, scheduling on an archived class, deleting a booked
+session) · 422 shape-valid-but-domain-invalid (a non-instructor as primary instructor,
+capacity below the booked count).
+
+**Deferred (guarded 501 stubs, not built this phase):** booking lifecycle, waitlist and
+promotion, attendance/no-show, recurring generation, CSV export, dashboard, membership
+alerts, and co-instructor mutation. Co-instructor scheduling conflicts specifically still
+need per-instructor advisory locks (Phase-2 documented risk) — Phase 5 does not claim to
+solve them.
+
 ## Authentication decisions (short form — full entries in docs/decisions.md #13/#14)
 
 - **DB-backed opaque-token sessions**, not signed cookies / JWT / Auth.js / Supabase Auth:

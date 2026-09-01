@@ -233,3 +233,48 @@ Logged as they happen. Each entry: what was chosen, what was rejected, and why. 
   migrate from `requireCapability` to `requireSessionView` + a capability (the resource-
   scoped shape), and the Phase-4 instructor→403 tests reverse. That is a deliberate
   re-architecture, not a flag flip.
+
+## Decision 18 — Translate Prisma constraint errors by their real shape, verified empirically
+
+- **Chose:** `db-errors.ts` keys on the Prisma error code (`P2002` unique, `P2003` FK,
+  `P2039` for exclusion AND check), splits `P2039` by the nested SQLSTATE
+  (`meta.driverAdapterError.cause.code`: `23P01` overlap → 409, `23514` check → 422), and
+  classifies room-vs-instructor overlap by substring-matching the constraint name out of
+  `cause.message` — returning only fixed, pre-written messages.
+- **Rejected:** keying on the raw SQLSTATE at `err.code` (the design's first cut).
+- **Later reversed — the design assumed the wrong shape.** The plan mapped `err.code ===
+'23505'` etc. A hands-on probe against the migrated database (the dedicated review prober
+  returned a stub, so this was captured directly) showed Prisma over the pg adapter never
+  exposes the SQLSTATE top-level: exclusion and check both arrive as one code `P2039`, and
+  the exclusion constraint carries no structured name — only `cause.message` does. The
+  translator and its unit test were rewritten to the real captured shapes, with an explicit
+  test that no constraint name or row detail leaks into any 4xx body.
+
+## Decision 19 — Session default inheritance is copy-at-creation, not live-read
+
+- **Chose:** When a session omits duration/capacity, the class defaults are copied and stored
+  as the session's own resolved values; a later edit to the class default does NOT change
+  existing sessions.
+- **Rejected:** resolving the class default dynamically at read time.
+- **Why:** the brief says duration/capacity "default from the class but can be changed per
+  session" — a session is a concrete scheduled occurrence, and retroactively mutating the
+  duration of sessions people may already be booked into is surprising and unsafe. This also
+  matches the Phase-2 schema decision (the values are real columns on the session, not a
+  view). A test pins the non-retroactive behaviour.
+
+## Decision 20 — Rooms and members have no lifecycle state or deletion; the archived-class rule
+
+- **Chose:** Rooms and members are never archived or deleted in this phase. A room or member
+  referenced by a session/booking is RESTRICT-protected. New sessions cannot be scheduled on
+  an archived class (409 `class_archived`); existing sessions on it are untouched.
+- **Rejected:** a room retire/archive lifecycle and member deletion (neither is required by
+  the brief); allowing new sessions on archived classes.
+- **Why:** the brief needs rooms only as conflict-detection entities and never asks to retire
+  one; deleting a member with bookings would break historical integrity (Goal 9). Archiving a
+  class "hides it from the default views" — scheduling a _new_ session onto a hidden class
+  contradicts the intent, so it is rejected, while the non-destructive guarantee (existing
+  sessions/bookings survive) is preserved and tested.
+- **Consequence:** the archived-class check is application-only (no DB backstop) with a
+  narrow archive-between-check-and-insert race; since the brief permits sessions to _exist_
+  on archived classes, only the self-imposed "no new" rule is bypassed in that rare race —
+  documented as acceptable.

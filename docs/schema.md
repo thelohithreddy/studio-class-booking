@@ -244,6 +244,42 @@ BigInt JSON friction; (4) the GiST exclusion indexes grow with future sessions b
 stay range-bounded. The booking hot path itself (per-session row lock + `(session_id, status,
 seq)` index) is size-independent per session and does not degrade with global table growth.
 
+## Domain CRUD uses this schema unchanged (Phase 5)
+
+Phase 5 (classes/members/rooms/sessions management) added NO tables or columns — it is the
+first phase to _write_ the entities Phase 2 modelled, through validated services. Lifecycle
+rules it enforces on top of the existing schema:
+
+- **Classes** archive by setting `archived_at` (idempotent); default listings filter it out.
+  Archiving is non-destructive — the RESTRICT foreign keys already forbid deleting a class's
+  sessions or bookings, so archiving only flips the flag.
+- **Members** have no lifecycle state and no deletion: a member a booking references is
+  RESTRICT-protected (historical integrity), and the brief needs none. Expiry is a
+  `@db.Date` written as UTC midnight, validated with `z.iso.date()` (a real calendar date —
+  `2026-02-30` is a 400, not a silent roll-over to March 2), because Goals 4 and 10 compute
+  booking eligibility and alerts from this exact value.
+- **Rooms** likewise have no archive/retire state and no deletion — they exist as
+  conflict-detection entities; a referenced room is RESTRICT-protected.
+- **Sessions** copy `duration_minutes`/`capacity` from the class defaults at creation (a
+  later class-default edit is non-retroactive); `ends_at` is computed as
+  `starts_at + duration` to satisfy the Phase-2 CHECK. Room and primary-instructor overlap
+  is pre-checked in the application (friendly 409) and backstopped by the Phase-2 GiST
+  exclusion constraints (race-safe). A session hard-deletes only with no bookings; a booked
+  session's RESTRICT FK makes it permanently undeletable (translated to 409); delete is
+  idempotent (a lost double-delete race is a 404, not a 500). The one create-path invariant
+  with no DB backstop is "no new session on an archived class" — an app read-then-write with
+  a tiny archive-between-check-and-insert window; accepted because the brief only requires
+  archiving to be non-destructive (existing sessions survive), and a stray session on a
+  just-archived class is harmless and staff-removable (decisions.md #20).
+
+**Prisma constraint-error surface (verified empirically, decisions.md #18):** over the pg
+driver adapter, Prisma throws `P2002` (unique, `cause.constraint.index`), `P2003` (FK),
+`P2007` (invalid uuid), and `P2039` for **both** exclusion (`cause.code` 23P01) and check
+(23514) violations — the raw SQLSTATE never appears top-level. `src/lib/api/db-errors.ts`
+keys on the Prisma code, splits P2039 by the nested SQLSTATE, and classifies room-vs-
+instructor overlap from the constraint name in `cause.message` while returning only fixed
+messages (no PG text ever reaches the client).
+
 ## Authorization uses this schema unchanged (Phase 4)
 
 Phase 4 added no tables or columns: server-side authorization reads what Phase 2 already
