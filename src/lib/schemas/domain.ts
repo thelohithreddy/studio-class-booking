@@ -133,9 +133,28 @@ export const settleBookingSchema = z
   .object({ status: z.enum(['ATTENDED', 'NO_SHOW']), note: note.optional() })
   .strict()
 
+// Goal 6: filters (class/session/status), text search (member name/email, via
+// the shared `q`), and allowlisted sort — never a raw column/direction.
 export const bookingListQuerySchema = listQuerySchema.extend({
+  classId: z.string().uuid().optional(),
   sessionId: z.string().uuid().optional(),
   status: z.enum(['BOOKED', 'WAITLISTED', 'CANCELLED', 'ATTENDED', 'NO_SHOW']).optional(),
+  sort: z.enum(['bookedAt', 'status', 'session']).default('bookedAt'),
+  dir: z.enum(['asc', 'desc']).default('desc'),
 })
+
+// A half-open [from, to) date range for the sessions list — `from` inclusive,
+// `to` exclusive (avoids end-of-day boundary bugs). Calendar dates at UTC.
+export const sessionListQuerySchema = listQuerySchema
+  .extend({
+    classId: z.string().uuid().optional(),
+    from: z.iso.date().optional(),
+    to: z.iso.date().optional(),
+  })
+  .refine((v) => !(v.from && v.to) || v.from < v.to, {
+    message: 'The date range is empty: `to` must be after `from`.',
+  })
+
+export type BookingListQuery = z.infer<typeof bookingListQuerySchema>
 
 export type CreateBookingInput = z.infer<typeof createBookingSchema>
