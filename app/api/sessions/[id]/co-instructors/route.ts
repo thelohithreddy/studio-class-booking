@@ -1,19 +1,50 @@
 // app/api/sessions/[id]/co-instructors/route.ts
+import { db } from '@/lib/db'
 import { handleRoute, type RouteContext } from '@/lib/api/errors'
-import { requireCapability } from '@/server/authorization/guards'
-import { notImplemented } from '@/server/authorization/not-implemented'
+import { requireCapability, requireSessionView } from '@/server/authorization/guards'
+import { coInstructorSchema } from '@/lib/schemas/domain'
+import {
+  addCoInstructor,
+  readInstructorList,
+  removeCoInstructor,
+} from '@/server/domain/instructors'
 
-// POST/DELETE co-instructors — staff only (an instructor must never add
-// themselves or assign another). Uses the capability guard, not the session
-// view scope: relationship to the session grants no management right. Phase 6.
-// Binding rule for when this is implemented: parse the body through a
-// zod .strict() schema, map fields to Prisma explicitly, and take identity/
-// role only from the SessionUser the guard returned — never spread req.json().
-export const POST = handleRoute<RouteContext<'id'>>(async (req) => {
-  await requireCapability(req, 'coinstructor:manage')
-  return notImplemented('Adding co-instructors')
+/**
+ * GET — the session's instructor roster (primary + co-instructors, names only).
+ * SCOPED via requireSessionView: staff see any session; an instructor sees only
+ * a session they teach (primary or co), and an out-of-scope/missing/malformed id
+ * is a 404 (no existence leak) — Goal 5's "one list of every session where they
+ * are the primary or a co-instructor" is the same scope.
+ */
+export const GET = handleRoute<RouteContext<'id'>>(async (req, ctx) => {
+  const { id } = await ctx.params
+  await requireSessionView(req, id)
+  return Response.json({ instructors: await readInstructorList(db(), id) })
 })
-export const DELETE = handleRoute<RouteContext<'id'>>(async (req) => {
+
+/**
+ * POST — add a co-instructor. STAFF only (coinstructor:manage, not the view
+ * scope: teaching a session grants no right to manage its instructors — an
+ * instructor can never add themselves or anyone else). Idempotent: re-adding an
+ * existing co-instructor returns the current roster unchanged. The instructorId
+ * is read from a .strict() body and passed explicitly — never spread.
+ */
+export const POST = handleRoute<RouteContext<'id'>>(async (req, ctx) => {
   await requireCapability(req, 'coinstructor:manage')
-  return notImplemented('Removing co-instructors')
+  const { id } = await ctx.params
+  const { instructorId } = coInstructorSchema.parse(await req.json().catch(() => ({})))
+  return Response.json({ instructors: await addCoInstructor(db(), id, instructorId) })
+})
+
+/**
+ * DELETE — remove a co-instructor. STAFF only. The instructorId travels in the
+ * body (the path already names the session). Returns the updated roster (200);
+ * removing an assignment that is not present is a 404. Never touches the session
+ * itself or any booking history.
+ */
+export const DELETE = handleRoute<RouteContext<'id'>>(async (req, ctx) => {
+  await requireCapability(req, 'coinstructor:manage')
+  const { id } = await ctx.params
+  const { instructorId } = coInstructorSchema.parse(await req.json().catch(() => ({})))
+  return Response.json({ instructors: await removeCoInstructor(db(), id, instructorId) })
 })

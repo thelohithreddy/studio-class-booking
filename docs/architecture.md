@@ -259,6 +259,49 @@ authenticate → authorize SCOPE (first) → apply filters → COUNT (same predi
   exclusive (no end-of-day bug). `from`/`to` are calendar dates interpreted as midnight in
   `STUDIO_TIMEZONE` (DST-correct, consistent with membership expiry), ANDed under the scope.
 
+## Co-instructors & recurring generation (Phase 8)
+
+Goal 5 (co-instructors) and the recurring half of Goal 7. Both hang off one new spine,
+`src/server/domain/scheduling.ts`, whose job is the correctness the exclusion constraints
+cannot express.
+
+- **The conflict domain is the whole instructor.** An instructor may not be in two
+  time-overlapping sessions in _any_ capacity — primary or co. The room and primary-vs-primary
+  axes are GiST exclusion constraints (Phase 2, race-safe), but a co-instructor's schedule spans
+  `class_sessions ⋈ session_instructors`, which no single-table constraint can cover. One
+  predicate is the single source of truth: `instructorHasOverlap` — `EXISTS a class_session S,
+half-open `starts_at < end AND ends_at > start`, excluding self, where `S.primary_instructor_id
+  = I OR EXISTS session_instructors(S, I)`. One index-backed query.
+- **Race-safety is a uniform lock order: session row → instructor user rows (sorted uuid).**
+  Every schedule mutation runs in a transaction that first takes `SELECT … FROM class_sessions
+WHERE id=$1 FOR UPDATE` (when the session already exists), re-reads the interval under it, then
+  locks the affected instructors' _user rows_ `FOR UPDATE` in ascending-uuid order, then checks,
+  then writes. `createSession` (no row yet) locks only the primary user row. This closes three
+  defects the design review found: create missing the primary-vs-co axis; a co-add racing a
+  same-session time-edit into a double-book (their locks were disjoint and `FOR KEY SHARE` /
+  `FOR NO KEY UPDATE` do not conflict); and an unlocked `updateSession` read-modify-write losing
+  an edit. Deadlock-free by construction: the booking engine locks _only_ the session row and
+  never a user row, scheduling locks session-then-users, no op holds two session rows, users are
+  always sorted (decisions.md #28). A crossed-order multi-instructor test and the co-add-vs-edit
+  race test both pass across trials.
+- **Endpoints.** `POST`/`DELETE /api/sessions/[id]/co-instructors` (staff only,
+  `coinstructor:manage`; `{instructorId}` in a `.strict()` body; add is idempotent, remove is
+  404-when-absent, both return the roster) and `GET` (scoped via `requireSessionView` — an
+  instructor sees only sessions they teach, 404 otherwise; roster is `id + name`, never email).
+  `updateSession` (`PATCH /api/sessions/[id]`) now re-checks the primary AND every co under the
+  new lock order. Mutations return their display projection from a read _after_ the transaction
+  commits (a nested-relation select inside an interactive transaction pipelines on its single
+  held pg connection — display data, not a raced-upon invariant).
+- **Recurring generation** — `POST /api/sessions/generate` (staff only, `recurring:generate`).
+  A weekly wall-clock pattern (class/instructor/room/start-time over a weekday set and date
+  range) yields a PARTIAL `{created, skipped, summary}` report (Goal 7): each occurrence is its
+  own transaction; a conflict (instructor or room) skips just that occurrence, an unexpected
+  error aborts. The occurrence count is checked arithmetically _before_ any date is materialized
+  (an absurd range is rejected in µs), and re-running is naturally idempotent (every slot skips)
+  — decisions.md #29. Occurrence instants are wall-clock-preserving across DST via a two-pass
+  timezone resolver (`studioDateTimeToUtc`, decisions.md #30). No migration —
+  `session_instructors` (Phase 2) already carried the shape and indexes.
+
 ## Authentication decisions (short form — full entries in docs/decisions.md #13/#14)
 
 - **DB-backed opaque-token sessions**, not signed cookies / JWT / Auth.js / Supabase Auth:

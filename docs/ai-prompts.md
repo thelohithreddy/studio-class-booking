@@ -349,3 +349,62 @@ verification, then implemented.
   instructor per fixture session. The query mechanics themselves (literal wildcards, the
   scope∩filter intersection, half-open date boundaries, index-only plans) were all proven by a
   throwaway probe before the routes were written.
+
+## Phase 8 — co-instructors + recurring generation (Goals 5 & 7-recurring)
+
+### Prompt
+
+> PHASE 8 — PRODUCTION CO-INSTRUCTORS + RECURRING SESSIONS. Implement ONLY: co-instructor
+> management + authorization + conflict protection; recurring weekly generation + conflict
+> handling + atomicity/failure safety; tests; docs. Do NOT build CSV, dashboard, alerts, UI, or
+> deploy. Design the concurrency strategy BEFORE writing CRUD. Do not reflexively pick advisory
+> locks just because Phase 2 mentioned them. The conflict domain is INSTRUCTOR + TIME in ANY
+> capacity (primary or co), half-open intervals. Recurring must PARTIAL-generate with a
+> created/skipped report (Goal 7), be DST-correct, and bounded. Extend updateSession to re-check
+> all instructors. Feature branch → PR → merge. Stop after Phase 8.
+
+### What came back
+
+The design was written and probed first (the instructor row-lock serialization, the overlap
+query, deadlock-free sorted locks, and the DST time helper were each proven by a throwaway
+probe), then run through a 3-lens adversarial DESIGN panel with skeptic verification, folded in,
+implemented, and finally run through a second 3-lens panel over the actual IMPLEMENTATION diff.
+Delivered: co-instructor add/remove/list, the extended `updateSession`, recurring generation with
+a partial report, the `scheduling.ts` lock/overlap spine, `studioDateTimeToUtc`, and 44 tests
+(341 total). No migration.
+
+### What was wrong, and what was done about it
+
+- **The design panel found three real defects before a line of production code was written — the
+  highest-value review of the project.** (1) `createSession` was left on the Phase-5 primary+room
+  check, so creating a session whose primary is already a _co_ of an overlapping session slipped
+  through with no race at all — a single-threaded correctness bug the design's own "no path is
+  unsafe" claim contradicted. (2) A co-add and a concurrent time-edit of the _same_ session took
+  disjoint locks and could double-book the added co — the subtle reason being that the child
+  INSERT's `FOR KEY SHARE` on the parent row does not conflict with the time-edit's
+  `FOR NO KEY UPDATE` of non-key columns, so no shared lock existed. (3) `updateSession` was an
+  unlocked read-modify-write → a lost update. All three were closed by one change: a uniform
+  **session → user** lock order (lock the session row `FOR UPDATE` first, then instructor user
+  rows sorted), recorded as decisions.md #28 — which explicitly _reverses_ the Phase-2 note (and
+  Decision 21) that reserved advisory locks for this.
+- **The panel's DoS "major" was refuted — constructively.** A lens argued the recurring
+  occurrence cap could be defeated by a huge date range forcing per-day enumeration + Intl calls
+  before the cap check. The verifier refuted it (the count is closed-form arithmetic — measured
+  0.058 ms for a 2.9M-day payload), but the constructive half was adopted anyway: the count is
+  computed arithmetically and the cap enforced _before_ any date is materialized, plus a cheap
+  raw-span gate. A test asserts the 100-century payload is rejected in < 2 s.
+- **All three lenses flagged that the DST helper was only proven for 18:00 London** (far from the
+  ~01:00 transition), with no policy for a nonexistent/ambiguous wall time. Rebuilt as a two-pass
+  fixed-point resolver, exact for every real class time (including transition-adjacent), with an
+  explicit, unit-tested gap→forward / fold→standard-time policy across two zones and both
+  directions (decisions.md #30).
+- **A pg deprecation surfaced only by _running_ the tests, not reading the diff.** Returning a
+  nested-relation `select` from inside an interactive transaction pipelines on its single held
+  connection ("client is already executing a query" — removed in pg@9). Fixed by returning the
+  id from the transaction and reading the display projection after commit — which also matches
+  the pre-Phase-8 pattern. Caught because the existing booking-concurrency suite was warning-free
+  and the new suites were not.
+- Applied minors: implement recurring on the existing guarded `/api/sessions/generate` stub
+  rather than a new `/recurring` path (no orphaned stub); `updateSession` locks _exactly_ the
+  instructors it re-checks; the idempotency-dedup wording corrected (the application overlap
+  check is the dedup, not the exclusion constraints).

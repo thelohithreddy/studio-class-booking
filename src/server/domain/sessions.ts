@@ -4,8 +4,18 @@ import type { Prisma } from '@/generated/prisma/client'
 import { ApiError } from '@/lib/api/errors'
 import { withDbErrors } from '@/lib/api/db-errors'
 import type { CreateSessionInput, UpdateSessionInput } from '@/lib/schemas/domain'
-import { computeEndsAt, intervalsOverlap } from '@/server/domain/interval'
+import { computeEndsAt } from '@/server/domain/interval'
 import { parseIdOr404 } from '@/server/domain/ids'
+import {
+  assertInstructorFree,
+  lockInstructorRows,
+  lockSessionRow,
+} from '@/server/domain/scheduling'
+
+// Match the booking engine's generous ceilings so a queue on a session-row lock
+// drains rather than surfacing as a P2028 timeout; each tx is a few short
+// statements.
+const TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 } as const
 
 /**
  * Session fields plus SAFE display relations (class title/discipline, room
@@ -30,57 +40,41 @@ const SESSION_SELECT = {
   primaryInstructor: { select: { id: true, name: true } },
 } as const
 
-type Resolved = {
-  startsAt: Date
-  endsAt: Date
-  durationMinutes: number
-  capacity: number
-  primaryInstructorId: string
-  roomId: string
-}
-
 /**
- * Friendly, race-losing pre-check: is the room or the primary instructor
- * already occupied over [startsAt, endsAt)? Excludes `excludeSessionId` (the
- * session being edited). Half-open interval — adjacency is fine. The database
- * exclusion constraints remain the authoritative backstop; this exists to
- * return a clean 409 before the write instead of relying on the constraint
- * error alone.
+ * Friendly, race-losing pre-check for the ROOM axis: is the room already booked
+ * over [startsAt, endsAt)? Half-open, so adjacency is fine. Excludes the session
+ * being edited. The GiST room exclusion constraint is the authoritative race
+ * backstop; this returns a clean 409 before the write. The DB interval predicate
+ * (`starts_at < end AND ends_at > start`) is exactly half-open overlap and rides
+ * the Phase-2 index, so no code-side re-confirm is needed.
  *
- * One query: fetch the room's and instructor's candidate-overlapping sessions
- * in a single findMany (the DB filters by an interval predicate that rides the
- * Phase-2 GiST/btree indexes), then confirm overlap in code.
+ * The INSTRUCTOR axis is handled separately by assertInstructorFree (scheduling.ts),
+ * because an instructor conflicts in ANY capacity (primary OR co) — a domain the
+ * single-table room/primary exclusion constraints cannot express.
  */
-async function assertNoConflict(db: Db, r: Resolved, excludeSessionId?: string): Promise<void> {
-  const candidates = await db.classSession.findMany({
+async function assertRoomFree(
+  tx: Prisma.TransactionClient,
+  roomId: string,
+  startsAt: Date,
+  endsAt: Date,
+  excludeSessionId?: string,
+): Promise<void> {
+  const clash = await tx.classSession.findFirst({
     where: {
+      roomId,
+      startsAt: { lt: endsAt },
+      endsAt: { gt: startsAt },
       ...(excludeSessionId ? { id: { not: excludeSessionId } } : {}),
-      OR: [{ roomId: r.roomId }, { primaryInstructorId: r.primaryInstructorId }],
-      // Interval overlap at the DB layer: existing.starts < candidate.end AND
-      // existing.ends > candidate.start.
-      startsAt: { lt: r.endsAt },
-      endsAt: { gt: r.startsAt },
     },
-    select: { roomId: true, primaryInstructorId: true, startsAt: true, endsAt: true },
+    select: { id: true },
   })
-
-  for (const c of candidates) {
-    if (!intervalsOverlap(r.startsAt, r.endsAt, c.startsAt, c.endsAt)) continue
-    if (c.roomId === r.roomId) {
-      throw new ApiError(409, 'room_conflict', 'That room is already booked for this time.')
-    }
-    if (c.primaryInstructorId === r.primaryInstructorId) {
-      throw new ApiError(
-        409,
-        'instructor_conflict',
-        'That instructor already has a session at this time.',
-      )
-    }
+  if (clash) {
+    throw new ApiError(409, 'room_conflict', 'That room is already booked for this time.')
   }
 }
 
 /** Resolves and validates the class, instructor and room referenced by a write. */
-async function resolveRefs(
+export async function resolveRefs(
   db: Db,
   classId: string,
   primaryInstructorId: string,
@@ -127,56 +121,49 @@ export async function createSession(db: Db, input: CreateSessionInput) {
   const capacity = input.capacity ?? klass.defaultCapacity
   const endsAt = computeEndsAt(startsAt, durationMinutes)
 
-  const resolved: Resolved = {
-    startsAt,
-    endsAt,
-    durationMinutes,
-    capacity,
-    primaryInstructorId: input.primaryInstructorId,
-    roomId: input.roomId,
-  }
+  const created = await withDbErrors(
+    () =>
+      db.$transaction(async (tx) => {
+        // The session row does not exist yet, so there is nothing to lock on
+        // the room/session axis beyond the exclusion constraints. Lock the
+        // primary instructor's user row so a concurrent op that would give them
+        // an overlapping session in ANY capacity (primary or co) is serialized
+        // — the primary-vs-co axis has no constraint, so the app check under
+        // this lock is what makes it race-safe. The room + primary-vs-primary
+        // exclusion constraints backstop those two axes.
+        await lockInstructorRows(tx, [input.primaryInstructorId])
+        await assertInstructorFree(tx, input.primaryInstructorId, startsAt, endsAt)
+        await assertRoomFree(tx, input.roomId, startsAt, endsAt)
 
-  await assertNoConflict(db, resolved)
-
-  return withDbErrors(() =>
-    db.classSession.create({
-      data: {
-        classId: input.classId,
-        startsAt,
-        durationMinutes,
-        endsAt,
-        capacity,
-        primaryInstructorId: input.primaryInstructorId,
-        roomId: input.roomId,
-        // bookedCount is server-managed (defaults to 0) — never from input.
-      },
-      select: SESSION_SELECT,
-    }),
+        return tx.classSession.create({
+          data: {
+            classId: input.classId,
+            startsAt,
+            durationMinutes,
+            endsAt,
+            capacity,
+            primaryInstructorId: input.primaryInstructorId,
+            roomId: input.roomId,
+            // bookedCount is server-managed (defaults to 0) — never from input.
+          },
+          select: { id: true },
+        })
+      }, TX_OPTIONS),
+    { conflict: 'That time slot is no longer available.' },
   )
+  // Read the display projection after commit (a nested-relation select inside
+  // the interactive transaction pipelines on its single held connection).
+  return db.classSession.findUniqueOrThrow({ where: { id: created.id }, select: SESSION_SELECT })
 }
 
 export async function updateSession(db: Db, id: string, input: UpdateSessionInput) {
   const validId = parseIdOr404(id, 'Session not found.')
-  const existing = await db.classSession.findUnique({
-    where: { id: validId },
-    select: {
-      classId: true,
-      startsAt: true,
-      endsAt: true,
-      durationMinutes: true,
-      capacity: true,
-      primaryInstructorId: true,
-      roomId: true,
-    },
-  })
-  if (!existing) throw new ApiError(404, 'not_found', 'Session not found.')
 
-  const primaryInstructorId = input.primaryInstructorId ?? existing.primaryInstructorId
-  const roomId = input.roomId ?? existing.roomId
-
-  // Re-validate any changed reference. The class is not changing (classId is
-  // immutable in Phase 5), so no archived-class re-check on edit.
-  if (input.primaryInstructorId && input.primaryInstructorId !== existing.primaryInstructorId) {
+  // Validate any CHANGED reference up front (reads only; no locks). A missing
+  // ref fails here as 404/422 before the transaction. The class is immutable in
+  // Phase 5, so no archived-class re-check on edit. These are re-resolved
+  // against the locked row inside the transaction.
+  if (input.primaryInstructorId) {
     const instructor = await db.user.findUnique({
       where: { id: input.primaryInstructorId },
       select: { role: true },
@@ -190,42 +177,89 @@ export async function updateSession(db: Db, id: string, input: UpdateSessionInpu
       )
     }
   }
-  if (input.roomId && input.roomId !== existing.roomId) {
+  if (input.roomId) {
     const room = await db.room.findUnique({ where: { id: input.roomId }, select: { id: true } })
     if (!room) throw new ApiError(404, 'not_found', 'Room not found.')
   }
 
-  const startsAt = input.startsAt ? new Date(input.startsAt) : existing.startsAt
-  const durationMinutes = input.durationMinutes ?? existing.durationMinutes
-  const capacity = input.capacity ?? existing.capacity
-  const endsAt = computeEndsAt(startsAt, durationMinutes)
+  await withDbErrors(
+    () =>
+      db.$transaction(async (tx) => {
+        // Lock the session row FIRST and re-read its authoritative state under
+        // the lock. This is the outermost lock everywhere (session → users), so
+        // it closes both the lost-update race (two concurrent PATCHes) and the
+        // co-instructor double-book race (a concurrent co-add serializes here).
+        const existing = await lockSessionRow(tx, validId)
 
-  const resolved: Resolved = {
-    startsAt,
-    endsAt,
-    durationMinutes,
-    capacity,
-    primaryInstructorId,
-    roomId,
-  }
+        const primaryInstructorId = input.primaryInstructorId ?? existing.primaryInstructorId
+        const roomId = input.roomId ?? existing.roomId
+        const startsAt = input.startsAt ? new Date(input.startsAt) : existing.startsAt
+        const durationMinutes = input.durationMinutes ?? existing.durationMinutes
+        const capacity = input.capacity ?? existing.capacity
+        const endsAt = computeEndsAt(startsAt, durationMinutes)
 
-  // Re-run conflict validation against the NEW values (a create-time check does
-  // not stay valid forever). Exclude self.
-  await assertNoConflict(db, resolved, validId)
+        const intervalChanged =
+          startsAt.getTime() !== existing.startsAt.getTime() ||
+          durationMinutes !== existing.durationMinutes
+        const primaryChanged = primaryInstructorId !== existing.primaryInstructorId
+        const roomChanged = roomId !== existing.roomId
 
-  const data: Prisma.ClassSessionUpdateInput = {
-    startsAt,
-    endsAt,
-    durationMinutes,
-    capacity,
-    primaryInstructor: { connect: { id: primaryInstructorId } },
-    room: { connect: { id: roomId } },
-  }
+        // Current co-instructors: needed to (a) reject promoting a co to primary,
+        // (b) lock them, and (c) re-check them when the interval moves.
+        const coRows = await tx.sessionInstructor.findMany({
+          where: { sessionId: validId },
+          select: { instructorId: true },
+        })
+        const coIds = coRows.map((c) => c.instructorId)
 
-  return withDbErrors(
-    () => db.classSession.update({ where: { id: validId }, data, select: SESSION_SELECT }),
+        // An instructor cannot be primary AND co of the same session.
+        if (primaryChanged && coIds.includes(primaryInstructorId)) {
+          throw new ApiError(
+            422,
+            'already_co',
+            'That instructor is already a co-instructor of this session.',
+          )
+        }
+
+        // Which instructors must be free in the NEW window?
+        //  - interval moved   → the primary AND every co,
+        //  - primary swapped  → the new primary,
+        //  - room/capacity    → none (the session lock still guards lost updates).
+        const toCheck = [
+          ...new Set(
+            intervalChanged
+              ? [primaryInstructorId, ...coIds]
+              : primaryChanged
+                ? [primaryInstructorId]
+                : [],
+          ),
+        ]
+
+        // Lock exactly the instructors we are about to check (sorted uuid order,
+        // enforced by lockInstructorRows) so each overlap check is atomic against
+        // any concurrent op touching that instructor on another session.
+        await lockInstructorRows(tx, toCheck)
+        for (const instructorId of toCheck) {
+          await assertInstructorFree(tx, instructorId, startsAt, endsAt, validId)
+        }
+        if (intervalChanged || roomChanged) {
+          await assertRoomFree(tx, roomId, startsAt, endsAt, validId)
+        }
+
+        const data: Prisma.ClassSessionUpdateInput = {
+          startsAt,
+          endsAt,
+          durationMinutes,
+          capacity,
+          primaryInstructor: { connect: { id: primaryInstructorId } },
+          room: { connect: { id: roomId } },
+        }
+        await tx.classSession.update({ where: { id: validId }, data, select: { id: true } })
+      }, TX_OPTIONS),
     { check: 'Capacity cannot be below the number of members already booked.' },
   )
+  // Read the display projection after commit (see createSession).
+  return db.classSession.findUniqueOrThrow({ where: { id: validId }, select: SESSION_SELECT })
 }
 
 /**

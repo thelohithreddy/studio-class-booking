@@ -168,6 +168,36 @@ filter intersection, literal-wildcard + SQLi payloads, deterministic cross-page 
 pagination bounds, data minimization, and DST boundaries. No migration. Deferred, still guarded
 501: co-instructor mutation, recurring, CSV, dashboard, alerts.
 
+### Phase 8 — co-instructors + recurring generation (done)
+
+Branch `phase-8-coinstructors-recurring`. Scope: Goal 5 (co-instructor management) + the
+recurring half of Goal 7 — CSV stays deferred. (Reordering: the original table put co-instructors
+in Phase 7 and recurring in Phase 8; Phase 7 spent its budget on Goal 6, so both landed here.)
+Protocol as before: audit → design (concurrency strategy decided BEFORE code) → hands-on probes →
+adversarial DESIGN panel (3 lenses + skeptic verification) → implement → adversarial DIFF panel.
+
+The design panel earned its keep — it found three real defects in the first design and refuted a
+fourth: (F1) `createSession` was left on the Phase-5 primary+room check, so creating a session
+whose primary is already a _co_ of an overlapping session slipped through with no race — a
+single-threaded bug; (F2) a co-add and a concurrent time-edit of the same session took disjoint
+locks and could double-book the added co (the child INSERT's `FOR KEY SHARE` does not conflict
+with the time-edit's `FOR NO KEY UPDATE`); (F3) `updateSession` was an unlocked read-modify-write
+→ a lost update. The unifying fix is a uniform **session→user** lock order (decisions.md #28): every
+schedule mutation locks the session row `FOR UPDATE` first (create has none, so it locks the primary
+user row), then the affected instructor user rows in sorted-uuid order. The refuted finding — a
+recurring occurrence-count DoS — was closed constructively by computing the count arithmetically
+before enumerating (a 100-century payload is rejected in µs). The DST minors became a two-pass
+timezone resolver with an explicit, tested gap/fold policy (decisions.md #30).
+
+Delivered: co-instructor add/remove/list (staff-only mutation, scoped read, full any-capacity
+conflict matrix), the extended `updateSession` (re-checks the primary AND every co under the new
+lock order), recurring generation with a PARTIAL created/skipped report (decisions.md #29), the
+`scheduling.ts` lock/overlap spine, `studioDateTimeToUtc`, and 44 new tests (341 total): the DST
+resolver (11 unit), co-instructor CRUD/authz/matrix/edit-path (16), the concurrency matrix incl.
+the F2 race and a crossed-lock deadlock test (7), and recurring boundaries/skips/idempotency/cap/
+concurrency (10). No migration — `session_instructors` (Phase 2) carried everything. Deferred,
+still guarded 501: CSV export, dashboard, alerts.
+
 ## Retrospective (filled at submission)
 
 - What order did you build in, and why that order? — see table above; final commentary at the end.
