@@ -1,15 +1,20 @@
 // app/api/dashboard/route.ts
+import { db } from '@/lib/db'
 import { handleRoute } from '@/lib/api/errors'
 import { requireCapability } from '@/server/authorization/guards'
-import { notImplemented } from '@/server/authorization/not-implemented'
+import { getDashboard } from '@/server/reporting/dashboard'
 
-// GET /api/dashboard — studio-wide metrics (staff only). Any future instructor
-// dashboard must be a separate, scope-filtered query — never this global one.
-// Phase 8.
-// Binding rule for when this is implemented (a GET — no request body):
-// validate any query parameters through a zod schema, and take identity/role
-// only from the SessionUser the guard returned.
+/**
+ * GET /api/dashboard — studio-wide operational metrics (Goal 8). STAFF only
+ * (dashboard:studio, decisions.md #17): the capability guard runs first, so a
+ * non-staff caller (an instructor) is 403'd before any aggregation runs — this
+ * global query is never reachable by a scoped role. There are NO query
+ * parameters: the view is a fixed landing snapshot ("today"/"this week"/"last
+ * eight weeks" are anchored to server time in the studio timezone), which
+ * removes the filter-widening / parameter-pollution / SQLi-via-filter surfaces
+ * entirely. Identity/role come only from the SessionUser the guard returned.
+ */
 export const GET = handleRoute(async (req) => {
   await requireCapability(req, 'dashboard:studio')
-  return notImplemented('Dashboard metrics')
+  return Response.json(await getDashboard(db()))
 })

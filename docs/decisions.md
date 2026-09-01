@@ -540,3 +540,90 @@ member:{name,email}} })`; the to-one `member` select is loaded in a single query
   `bookings(session_id, status, seq)` index for the sessionId filter (a tiny in-memory sort on seq,
   since status sits between the two in the index — negligible for a per-session result). No new
   index; no schema change.
+
+## Decision 32 — Operational dashboard: staff-only, studio-wide, no-parameter, DB-aggregated (Goal 8)
+
+- **What the brief asks (Goal 8, verbatim):** "A dashboard. A landing view shows headline numbers
+  — sessions today, bookings made today, no-shows this week, and members currently waitlisted. It
+  also breaks bookings down by status and by class, and charts attendance per week over the last
+  eight weeks."
+- **Role model — STAFF ONLY, studio-wide (reaffirming Decision 17):** the numbers are studio-wide
+  by wording; `dashboard:studio` is staff-only and the `/api/dashboard` stub already said "any
+  future instructor dashboard must be a SEPARATE, scope-filtered query — never this global one."
+  Enforced at the SINGLE data entry point — `GET /api/dashboard`'s
+  `requireCapability('dashboard:studio')`: an instructor's fetch 403s and never receives a byte,
+  and the client landing page (which fetches that route and does no authorization of its own) sends
+  a 403'd instructor to their scoped home. Instructor-scope / filter-widening / instructor-IDOR are
+  **N/A** (an instructor never reaches the data). The aggregations carry no scope predicate because
+  `sessionScopeWhere`
+  for staff is empty `{}`; they are documented as unconditionally studio-wide and MUST remain
+  behind the capability.
+- **No parameters (a positive security property):** Goal 8 specifies a fixed landing view — no
+  date-range/class/instructor filters. `GET /api/dashboard` takes NO query parameters, so the
+  filter-widening / parameter-pollution / SQLi-via-filter surfaces do not exist (a test fires
+  `?classId=x&status=' OR 1=1--&foo=bar&foo=baz` and confirms it is ignored, result unchanged). The
+  only input is the authenticated identity; "today"/"this week"/"last eight weeks" anchor to server
+  time in the studio timezone.
+- **Metric definitions (exact, all studio-local, half-open [start,end), DST-correct):**
+  - _sessions today_ = sessions with `starts_at` in [todayStart, tomorrowStart). Sessions have no
+    archived state; a session on a since-archived class still occurs → counted.
+  - _bookings made today_ = bookings with `created_at` (the "booked at" time) in today, ANY current
+    status (a booking made then cancelled today was still made today).
+  - _no-shows this week_ = NO_SHOW bookings whose SESSION `starts_at` is in this week (a no-show is a
+    settled status of a session; settlement is gated on `starts_at`, Decision 24).
+  - _members currently waitlisted_ = COUNT(DISTINCT member_id) with a WAITLISTED booking on an
+    **upcoming** session (`starts_at >= now`). Distinct MEMBERS (not bookings — "members"), and the
+    upcoming filter excludes orphaned WAITLISTED rows on already-passed sessions (Decision 24
+    guarantees those persist unpromoted), so the number reflects members actually waiting.
+  - _bookings by status_ = COUNT grouped by status over ALL bookings (no period stated), returned
+    for all five statuses including explicit 0s in a fixed order.
+  - _bookings by class_ = COUNT grouped by the session's class over ALL bookings; ordered count DESC,
+    title ASC, **class_id ASC** (Class.title is not unique, so id is the deterministic tiebreaker).
+  - _attendance per week_ = ATTENDED bookings whose SESSION is in each of the last 8 studio-local
+    ISO (Monday-start) weeks; exactly 8 buckets, 0-filled, bounded to [w0, w8) so nothing older
+    than 8 weeks leaks in.
+  - No ratios/percentages are required, so the DATA layer has no zero-denominator cases. The only
+    division is the UI bar-height scaling (`barHeightPercent`), guarded so max==0 → 0 (never NaN).
+- **Boundary math (one source of truth):** JS computes all day/week windows studio-local via the
+  existing DST-correct helpers (studioToday, studioDateToUtc) + pure UTC-calendar-day string
+  arithmetic; the SAME 9-boundary array feeds both "this week" (w[7]..w[8]) and the 8-week chart
+  (buckets [w[i], w[i+1])), so they can never disagree. `now` is injected for deterministic tests.
+- **Query architecture:** `getDashboard(db, now)` runs SEVEN independent, bounded aggregation
+  queries CONCURRENTLY — Prisma `count()`/`groupBy` for the typed ones, raw `$queryRaw` for
+  count-distinct, group-by-class (a related field Prisma groupBy can't express), and the
+  `width_bucket` per-week chart. Clarity over a single unreadable mega-query. **Every raw count is
+  cast `::int`** — @prisma/adapter-pg surfaces a bare `bigint` as JS `BigInt`, which would break
+  `JSON.stringify` and mix-type the arithmetic (a review-caught blocker). The `width_bucket` query
+  is bounded `WHERE starts_at >= w[0] AND < w[8]` so it yields only buckets 1..8 and stays index-
+  bounded (a review-caught major — an unbounded version dumps all older history into bucket 0 and
+  scans everything). No N+1 (a constant-query test proves the count is independent of dataset size).
+- **Performance / indexes:** EXPLAIN ANALYZE on ~300 sessions / 1500 bookings: `membersWaitlisted`
+  rides `class_sessions_starts_at_idx` + `bookings(session_id,status,seq)`; `noShowsThisWeek` rides
+  the `bookings(status,created_at)` bitmap index; the all-time by-status/by-class aggregates read
+  the whole (small) bookings table by design (an unfiltered "by status/by class" must). All queries
+  execute in <1 ms at that size. **NO NEW INDEX REQUIRED** (existing Phase-2 indexes cover the
+  filtered/join predicates; the prompt forbids speculative indexes). No schema change / migration.
+- **No caching, no realtime:** a per-request DB snapshot is correct for an operational dashboard;
+  no Redis/SWR/WebSocket/SSE is warranted by Goal 8 or the studio-scale workload. `GET /api/dashboard`
+  is `no-store` (handleRoute default) — never cached, always per-request and per-identity.
+- **Rendering — thin CLIENT page over the server-authorized API (a deliberate, documented choice):**
+  Goal 8 favours server rendering, and the first cut made `/` a Server Component that calls
+  `getDashboard` directly. But Next 16 **prerendered and statically cached that route** (serving one
+  build-time render with `s-maxage=31536000`, identical for every cookie) because a Server Component
+  that calls `redirect()` at build (no cookies → non-staff → redirect) is captured as a static
+  redirect — and `export const dynamic='force-dynamic'`, `await connection()`, and a direct
+  `await cookies()` all failed to prevent it (verified against a running production build). So the
+  page follows the **same client-page + API pattern every other page uses**: `app/(app)/page.tsx` is
+  a `'use client'` view that fetches `GET /api/dashboard`; Next renders a data-free static shell and
+  the browser fetches per request. The AUTHORIZATION is unchanged and server-side — the route's
+  `requireCapability('dashboard:studio')` is the boundary (instructor → 403, unauth → 401, `no-store`);
+  the shell carries no user data and no token; an instructor's 403 sends them to /sessions (UX only).
+- **UI (in `DashboardView`):** Data-minimized DTO — counts + class titles + the studio timezone only
+  (no member/instructor PII, no ids beyond classId). Accessibility: headline as a `<dl>` of grouped
+  card divs; by-status/by-class and the 8-week series as `<table>`s with captions and `th scope`;
+  the bar chart is `aria-hidden` decoration whose accessible source is the adjacent data table (no
+  color-only meaning); explicit empty states ("No bookings yet", "No attendance recorded in the last
+  8 weeks"); an "as of <studio-local time>" caption. Responsive: the 4-card grid stacks on mobile;
+  tables scroll in `overflow-x-auto`; no horizontal page overflow.
+- **currentUser() (React cache):** the (app) layout resolves the session (nav + /login redirect) via
+  a request-cached `currentUser()` helper, so any server components in a request share one lookup.

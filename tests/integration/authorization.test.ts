@@ -198,7 +198,7 @@ describe('capability-gated endpoints', () => {
       call: (c) => bookingNote(req('POST', c), ctx('x')),
       staff: 'pass',
     },
-    { name: 'GET /dashboard', call: (c) => dashboard(req('GET', c)), staff: 501 },
+    { name: 'GET /dashboard', call: (c) => dashboard(req('GET', c)), staff: 200 },
     {
       name: 'POST /alert-dismiss',
       call: (c) => alertDismiss(req('POST', c), ctx('x')),

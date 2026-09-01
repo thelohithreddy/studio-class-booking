@@ -271,6 +271,16 @@ negligible for a per-session result set). Members are not users (Decision 7), so
 `member{name,email}` projection cannot reach any credential column. Full export design in
 decisions.md #31.
 
+## The dashboard uses this schema unchanged (Phase 10)
+
+Goal 8's dashboard (`getDashboard`) added no tables, columns or indexes. Its seven aggregations
+read existing tables: `class_sessions.starts_at` (sessions today / this week; rides
+`class_sessions(starts_at)`), `bookings.created_at` (bookings made today; rides `bookings(created_at)`),
+`bookings.status` + the session/class joins (no-shows, by-status, by-class, per-week attendance;
+ride `bookings(status,created_at)` and `bookings(session_id,status,seq)`). EXPLAIN ANALYZE at ~1500
+bookings executes each in <1 ms; the all-time by-status/by-class aggregates read the whole (small)
+bookings table by design. NO NEW INDEX REQUIRED — full analysis in decisions.md #32.
+
 ## The booking engine uses this schema unchanged (Phase 6)
 
 Phase 6 added no tables or columns — the Phase-2 model already carried the booking lifecycle.

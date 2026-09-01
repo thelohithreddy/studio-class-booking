@@ -331,6 +331,36 @@ member: { name, email } } })` — the `where: { sessionId }` is the boundary the
   defensive backstop). Correctness is round-trip-tested with a real parser; no schema change, no new
   index (the export rides `bookings(session_id, status, seq)`). Full rationale in decisions.md #31.
 
+## Operational dashboard (Phase 10)
+
+Goal 8's studio landing view. Staff-only, studio-wide, no parameters.
+
+- **One domain function, one guarded entry.** `getDashboard(db, now)` (src/server/reporting/dashboard.ts)
+  computes the whole DTO with SEVEN concurrent, bounded DB aggregations (no domain rows are loaded
+  into JS). Its single caller is `GET /api/dashboard`, which gates on
+  `requireCapability('dashboard:studio')` before any query runs — an instructor is 403'd and never
+  reaches a studio-wide number. The landing page `app/(app)/page.tsx` is a thin client view that
+  fetches that route (redirecting a 403'd instructor to /sessions); it performs no authorization of
+  its own. There are NO query parameters, so the filter-widening / parameter-pollution /
+  SQLi-via-filter surfaces do not exist.
+- **All metrics are studio-local, half-open, DST-correct.** JS computes every day/week window as a
+  UTC instant via the existing helpers (studioToday, studioDateToUtc); one 9-boundary array feeds
+  both "this week" and the 8-week chart so they cannot disagree. Raw counts are cast `::int` (a bare
+  `bigint` would surface as a JS `BigInt` and break JSON serialization); the `width_bucket` chart is
+  bounded to the 8-week window so it stays index-bounded and never buckets older history. Metric
+  definitions, the boundary math, and the EXPLAIN/index review are in decisions.md #32.
+- **UI.** The dashboard is the staff landing route `/`, a thin `'use client'` view that fetches
+  `GET /api/dashboard` — the same client-page + API pattern every other page uses. (A Server
+  Component that called `getDashboard` directly was tried first, but Next 16 statically prerendered
+  and cached that route because a build-time `redirect()` in a Server Component is captured as a
+  static redirect, which `force-dynamic`/`connection()`/`cookies()` did not prevent; the client
+  page renders a data-free shell and fetches per request. Authorization is unchanged and server-side
+  — the route's capability guard, no chart library, no state.) DTO is data-minimized (counts + class
+  titles + timezone only). Accessible: `<dl>` stat cards, `<table>`s with captions/`th scope`, and a
+  decorative `aria-hidden` bar chart whose accessible source is the adjacent data table; explicit
+  empty states; an "as of <studio-local time>" caption; responsive grid + scrollable tables. No new
+  index, no migration, no caching/realtime. Full rationale in decisions.md #32.
+
 ## Authentication decisions (short form — full entries in docs/decisions.md #13/#14)
 
 - **DB-backed opaque-token sessions**, not signed cookies / JWT / Auth.js / Supabase Auth:

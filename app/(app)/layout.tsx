@@ -1,24 +1,23 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { headers } from 'next/headers'
 
-import { getSessionUser } from '@/server/auth/session'
+import { currentUser } from '@/server/auth/current-user'
 
 /**
  * Server component: resolves the authenticated identity from the request and
  * redirects to /login when there is none. This is UX only — every API route
  * independently enforces its own authentication and authorization; a direct
- * API call never depends on this layout.
+ * API call never depends on this layout. currentUser() is request-cached, so
+ * the page this layout renders shares the same lookup.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const headerList = await headers()
-  const cookie = headerList.get('cookie') ?? ''
-  const user = await getSessionUser(new Request('http://internal/', { headers: { cookie } }))
+  const user = await currentUser()
   if (!user) redirect('/login')
 
   const staffLinks: Array<[string, string]> =
     user.role === 'STAFF'
       ? [
+          ['/', 'Dashboard'],
           ['/classes', 'Classes'],
           ['/members', 'Members'],
           ['/rooms', 'Rooms'],
