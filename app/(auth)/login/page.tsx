@@ -66,9 +66,10 @@ export default function LoginPage() {
             </svg>
           </span>
           <div>
-            <h1 className="text-[1.35rem] font-semibold tracking-tight text-fg">Cadence</h1>
-            <p className="eyebrow mt-0.5">Studio Operations</p>
+            <h1 className="font-display text-[1.75rem] tracking-tight text-fg">Cadence</h1>
+            <p className="eyebrow mt-1">Studio Operations</p>
           </div>
+          <p className="max-w-60 text-[0.8125rem] text-muted">Studio operations, simplified.</p>
         </div>
 
         <div className="rounded-2xl border border-line bg-surface p-7 shadow-sm">
@@ -108,7 +109,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-subtle">
-          Studio operations, simplified. Access is managed by your studio administrator.
+          Access is managed by your studio administrator.
         </p>
       </div>
     </main>

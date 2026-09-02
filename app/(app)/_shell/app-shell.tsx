@@ -62,7 +62,7 @@ function BrandMark() {
         </svg>
       </span>
       <span className="flex flex-col leading-none">
-        <span className="text-[0.95rem] font-semibold tracking-tight text-fg">Cadence</span>
+        <span className="font-display text-[1.05rem] text-fg">Cadence</span>
         <span className="eyebrow mt-px">Studio Operations</span>
       </span>
     </span>
