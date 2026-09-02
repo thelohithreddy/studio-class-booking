@@ -1,111 +1,128 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
-import { useAlerts } from '../alerts-provider'
-import { api, Button, Notice } from '../ui'
-
-/** Urgency in TEXT (never colour alone), from the server-computed daysRemaining. */
-function urgencyLabel(days: number): string {
-  if (days < 0) {
-    const n = Math.abs(days)
-    return `Expired ${n} day${n === 1 ? '' : 's'} ago`
-  }
-  if (days === 0) return 'Expires today'
-  return `Expires in ${days} day${days === 1 ? '' : 's'}`
-}
+import { apiSend } from '@app/_lib/api'
+import { qk, useApiMutation } from '@app/_lib/query'
+import { useAlerts } from '@app/_lib/use-alerts'
+import { formatDaysRemaining, formatMembershipDate } from '@app/_lib/format'
+import { membershipFromDays } from '@app/_lib/status'
+import type { MembershipAlert } from '@app/_lib/types'
+import {
+  AsyncBoundary,
+  Avatar,
+  Button,
+  Callout,
+  Card,
+  EmptyState,
+  PageHeader,
+  SkeletonRows,
+  StatusBadge,
+  useToast,
+} from '@app/_components/ui'
+import { IconAlerts } from '@app/_components/icons'
+import { useIsStaff } from '../_shell/user-context'
 
 export default function AlertsPage() {
-  const alertsCtx = useAlerts()
+  const staff = useIsStaff()
   const router = useRouter()
-  const headingRef = useRef<HTMLHeadingElement>(null)
-  const [dismissing, setDismissing] = useState<Record<string, boolean>>({})
-  const [dismissError, setDismissError] = useState<string | null>(null)
-  const [status, setStatus] = useState('')
-
-  // No provider means a non-staff visitor (an instructor): the alerts UI is
-  // staff-only, so send them to their own home. The data is protected server-side
-  // by the API regardless; this is UX only.
   useEffect(() => {
-    if (!alertsCtx) router.replace('/sessions')
-  }, [alertsCtx, router])
-  if (!alertsCtx) return null
+    if (!staff) router.replace('/sessions')
+  }, [staff, router])
 
-  const { data, loading, error, reload } = alertsCtx
+  const alerts = useAlerts(staff)
 
-  async function dismiss(memberId: string, name: string) {
-    setDismissError(null)
-    setDismissing((d) => ({ ...d, [memberId]: true }))
-    try {
-      // Server-authoritative: the dismissal records the member's CURRENT expiry.
-      await api(`/api/members/${memberId}/alert-dismiss`, { method: 'POST', body: '{}' })
-      setStatus(`Membership alert for ${name} dismissed.`) // announced via aria-live
-      headingRef.current?.focus() // move focus off the Dismiss button before its row unmounts
-      reload() // only remove the alert (and update the badge) after the server confirms
-    } catch (e) {
-      setDismissError((e as Error).message) // keep the alert visible; never optimistically hide
-    } finally {
-      setDismissing((d) => ({ ...d, [memberId]: false }))
-    }
-  }
-
-  if (loading && !data) {
-    return (
-      <p role="status" className="text-sm text-slate-500">
-        Loading…
-      </p>
-    )
-  }
-  // Only a first-load failure (no data yet) replaces the view; a later reload
-  // failure keeps the last list and surfaces the error as a banner below.
-  if (error && !data) return <Notice error={error} />
-
-  const alerts = data?.alerts ?? []
+  if (!staff) return null
 
   return (
-    <section aria-labelledby="alerts-h" className="flex flex-col gap-4">
-      <h1 id="alerts-h" ref={headingRef} tabIndex={-1} className="text-xl font-semibold">
-        Membership alerts
-      </h1>
-      <p className="text-sm text-slate-500">
-        Members whose membership has expired or expires within seven days.
-      </p>
-      <p aria-live="polite" className="sr-only">
-        {status}
-      </p>
-      {error ? <Notice error={error} /> : null}
-      <Notice error={dismissError} />
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Membership alerts"
+        description="Members whose membership has expired or expires within the next seven days. Lapsed members can’t make new bookings."
+      />
 
-      {alerts.length === 0 ? (
-        <p className="text-sm text-slate-500">No membership alerts.</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {alerts.map((a) => (
-            <li
-              key={a.memberId}
-              className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-200 px-4 py-3 dark:border-slate-800"
-            >
-              <div className="text-sm">
-                <strong>{a.name}</strong>
-                <span className="text-slate-500">
-                  {' · '}
-                  {a.membershipExpiresOn}
-                  {' · '}
-                  {urgencyLabel(a.daysRemaining)}
-                </span>
-              </div>
-              <Button
-                onClick={() => dismiss(a.memberId, a.name)}
-                disabled={dismissing[a.memberId]}
-                aria-label={`Dismiss membership alert for ${a.name}`}
-              >
-                {dismissing[a.memberId] ? 'Dismissing…' : 'Dismiss'}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+      <AsyncBoundary
+        query={alerts}
+        skeleton={
+          <Card className="p-4">
+            <SkeletonRows rows={4} />
+          </Card>
+        }
+        isEmpty={(d) => d.alerts.length === 0}
+        empty={
+          <Card>
+            <EmptyState
+              icon={<IconAlerts className="size-5" />}
+              title="No membership alerts"
+              description="Every member’s membership is current. Members expiring within seven days will appear here so you can follow up."
+            />
+          </Card>
+        }
+      >
+        {(data) => (
+          <div className="flex flex-col gap-4">
+            <Callout tone="neutral">
+              Dismissing an alert hides it until the member’s expiry date changes. If you extend a
+              membership and it later falls within seven days again, the alert returns.
+            </Callout>
+            <Card className="overflow-hidden">
+              <ul className="divide-y divide-line">
+                {data.alerts.map((alert) => (
+                  <AlertRow key={`${alert.memberId}-${alert.membershipExpiresOn}`} alert={alert} />
+                ))}
+              </ul>
+            </Card>
+          </div>
+        )}
+      </AsyncBoundary>
+    </div>
+  )
+}
+
+function AlertRow({ alert }: { alert: MembershipAlert }) {
+  const toast = useToast()
+  const meta = membershipFromDays(alert.daysRemaining)
+
+  const dismiss = useApiMutation(
+    () => apiSend(`/api/members/${alert.memberId}/alert-dismiss`, 'POST', {}),
+    {
+      invalidate: [qk.alerts],
+      onSuccess: () => toast.success(`Dismissed alert for ${alert.name}`),
+      onError: (e) => toast.error('Could not dismiss alert', e.message),
+    },
+  )
+
+  return (
+    <li className="flex items-center gap-3 p-4">
+      <Avatar name={alert.name} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-medium text-fg">{alert.name}</p>
+          <StatusBadge meta={meta} />
+        </div>
+        <p className="mt-0.5 text-sm text-muted">
+          {formatDaysRemaining(alert.daysRemaining)} ·{' '}
+          {formatMembershipDate(alert.membershipExpiresOn)}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <Link
+          href={`/members?q=${encodeURIComponent(alert.name)}`}
+          className="hidden text-sm font-medium text-brand hover:underline sm:inline"
+        >
+          View member
+        </Link>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => dismiss.mutate()}
+          loading={dismiss.isPending}
+        >
+          Dismiss
+        </Button>
+      </div>
+    </li>
   )
 }
