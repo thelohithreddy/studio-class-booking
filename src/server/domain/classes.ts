@@ -2,6 +2,7 @@
 import type { Db } from '@/lib/db'
 import { ApiError } from '@/lib/api/errors'
 import { parseIdOr404 } from '@/server/domain/ids'
+import { escapeLike } from '@/server/domain/search'
 import type { CreateClassInput, UpdateClassInput } from '@/lib/schemas/domain'
 
 /** Fields returned for a class — every scalar; nothing is sensitive here. */
@@ -69,13 +70,18 @@ export async function listClasses(
     includeArchived,
   }: { page: number; pageSize: number; q?: string; includeArchived: boolean },
 ) {
+  // Literal substring search: escape LIKE metacharacters (%/_) so they match
+  // literally rather than as wildcards — same semantics as the booking search
+  // (see escapeLike). Prisma parameterizes the value, so this is correctness,
+  // not an injection fix.
+  const term = q ? escapeLike(q) : undefined
   const where = {
     ...(includeArchived ? {} : { archivedAt: null }),
-    ...(q
+    ...(term
       ? {
           OR: [
-            { title: { contains: q, mode: 'insensitive' as const } },
-            { discipline: { contains: q, mode: 'insensitive' as const } },
+            { title: { contains: term, mode: 'insensitive' as const } },
+            { discipline: { contains: term, mode: 'insensitive' as const } },
           ],
         }
       : {}),

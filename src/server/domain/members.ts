@@ -3,6 +3,7 @@ import type { Db } from '@/lib/db'
 import { ApiError } from '@/lib/api/errors'
 import { withDbErrors } from '@/lib/api/db-errors'
 import { parseIdOr404 } from '@/server/domain/ids'
+import { escapeLike } from '@/server/domain/search'
 import type { CreateMemberInput, UpdateMemberInput } from '@/lib/schemas/domain'
 
 /**
@@ -71,11 +72,16 @@ export async function listMembers(
   db: Db,
   { page, pageSize, q }: { page: number; pageSize: number; q?: string },
 ) {
-  const where = q
+  // Literal substring search: escape LIKE metacharacters so a query of "50%"
+  // matches the member literally named "50%", not everything (matches the
+  // booking search's semantics — see escapeLike). Prisma parameterizes the
+  // value regardless, so this is correctness, not an injection fix.
+  const term = q ? escapeLike(q) : undefined
+  const where = term
     ? {
         OR: [
-          { name: { contains: q, mode: 'insensitive' as const } },
-          { email: { contains: q, mode: 'insensitive' as const } },
+          { name: { contains: term, mode: 'insensitive' as const } },
+          { email: { contains: term, mode: 'insensitive' as const } },
         ],
       }
     : {}
