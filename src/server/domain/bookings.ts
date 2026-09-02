@@ -230,8 +230,13 @@ export async function settleBooking(
   const bookingId = parseIdOr404(id, 'Booking not found.')
   return withDbErrors(() =>
     db.$transaction(async (tx) => {
-      const booking = await tx.booking.findUnique({
-        where: { id: bookingId },
+      // Object-level authorization: staff may settle any booking; an instructor
+      // only a booking on a session they teach (primary or co). The predicate
+      // travels INTO the query, so an out-of-scope id is indistinguishable from
+      // an absent one (404, no existence leak) — an instructor cannot settle,
+      // or even confirm the existence of, another instructor's booking.
+      const booking = await tx.booking.findFirst({
+        where: { AND: [{ id: bookingId }, bookingScopeWhere(actor)] },
         select: { sessionId: true },
       })
       if (!booking) throw new ApiError(404, 'not_found', 'Booking not found.')

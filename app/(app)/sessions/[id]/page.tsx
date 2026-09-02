@@ -478,7 +478,9 @@ function BookingRosterRow({
   onCancel: () => void
 }) {
   const meta = BOOKING_STATUS[booking.status]
-  const canSettle = staff && started && booking.status === 'BOOKED'
+  // Instructors reach this roster only for their own sessions (scoped read), so
+  // they may record attendance here; cancelling stays a staff-only action.
+  const canSettle = started && booking.status === 'BOOKED'
   const canCancel = staff && (booking.status === 'BOOKED' || booking.status === 'WAITLISTED')
 
   const items: MenuItem[] = []
@@ -502,7 +504,7 @@ function BookingRosterRow({
       {/* Status is always visible (mobile included); quick-settle buttons are an
           added convenience on wider screens, with the same actions in the menu. */}
       <StatusBadge meta={meta} />
-      {staff && started && booking.status === 'BOOKED' ? (
+      {canSettle ? (
         <div className="hidden items-center gap-1.5 lg:flex">
           <Button variant="secondary" size="sm" onClick={() => onSettle('ATTENDED')} loading={busy}>
             Attended
@@ -512,7 +514,9 @@ function BookingRosterRow({
           </Button>
         </div>
       ) : null}
-      {staff ? <Menu label={`Actions for ${booking.member.name}`} items={items} /> : null}
+      {items.length > 0 ? (
+        <Menu label={`Actions for ${booking.member.name}`} items={items} />
+      ) : null}
     </li>
   )
 }

@@ -26,7 +26,6 @@ import { POST as generate } from '@app/api/sessions/generate/route'
 import { GET as attendance } from '@app/api/sessions/[id]/attendance/route'
 import { POST as bookingCreate } from '@app/api/bookings/route'
 import { POST as bookingCancel } from '@app/api/bookings/[id]/cancel/route'
-import { POST as bookingSettle } from '@app/api/bookings/[id]/settle/route'
 import { POST as bookingNote } from '@app/api/bookings/[id]/notes/route'
 import { GET as dashboard } from '@app/api/dashboard/route'
 import { POST as alertDismiss } from '@app/api/members/[id]/alert-dismiss/route'
@@ -188,11 +187,11 @@ describe('capability-gated endpoints', () => {
       call: (c) => bookingCancel(req('POST', c), ctx('x')),
       staff: 'pass',
     },
-    {
-      name: 'POST /bookings/[id]/settle',
-      call: (c) => bookingSettle(req('POST', c), ctx('x')),
-      staff: 'pass',
-    },
+    // NOTE: POST /bookings/[id]/settle is deliberately absent from this
+    // instructor→403 table. Since Phase 16 (Decision 34) settlement is
+    // role-allowed for instructors and narrowed by an object-level scope check
+    // (an out-of-scope booking is a 404, not a role 403). Its full authorization
+    // matrix lives in tests/integration/attendance-authorization.test.ts.
     {
       name: 'POST /bookings/[id]/notes',
       call: (c) => bookingNote(req('POST', c), ctx('x')),

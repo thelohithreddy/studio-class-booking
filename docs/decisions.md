@@ -686,3 +686,34 @@ alert-dismiss` (alert:dismiss) → 204, empty `.strict()` body (any smuggled fie
   pluralised); the badge carries screen-reader text ("N membership alerts"); explicit empty state
   ("No membership alerts."). A non-staff visitor to /alerts is redirected to /sessions (the provider
   is absent → `useAlerts()` returns null → redirect, rather than crash).
+
+## Decision 34 — Instructors record attendance on their own sessions (reverses the earlier all-staff-only capability table)
+
+- **Context / reversal.** Earlier phases made _every_ capability STAFF-only, treating settlement as
+  a management verb. Re-reading Goal 1 against the scenario ("Instructors see their own sessions and
+  **record who actually showed up**") shows that is wrong: the brief forbids instructors only from
+  _creating_ classes, sessions, members, or **bookings** — recording attendance is explicitly an
+  instructor action. So the STAFF-only settle was an assignment-compliance gap, corrected here.
+- **Model.** Settlement (`POST /api/bookings/[id]/settle`) is gated on a new capability
+  `attendance:settle = [STAFF, INSTRUCTOR]`. Role is only the first gate; an **object-level** check
+  narrows instructors to their own sessions. Staff may settle any booking; an instructor may settle
+  ONLY a booking on a session they teach (primary or co). Every other booking verb
+  (`create`/`cancel`/`notes`) stays `booking:manage` (STAFF-only) — instructors get exactly one new
+  verb, no more.
+- **Enforcement (IDOR-safe by construction).** The object check reuses the existing
+  `bookingScopeWhere(actor)` predicate (staff → `{}`; instructor → `{ session: primary OR co }`) and
+  is applied INSIDE the settle transaction's booking lookup (`findFirst({ where: { AND: [{ id },
+bookingScopeWhere(actor)] } })`). An out-of-scope id is therefore indistinguishable from an absent
+  one — **404, no existence leak** — so an instructor cannot settle, or even confirm the existence of,
+  another instructor's booking. The booking state machine, the `too_early` gate, the session→user
+  lock order, the counter invariant, and the append-only history are all unchanged; only an
+  authorization predicate was added ahead of them. The `STATUS_CHANGED` event is attributed to the
+  actual actor (the instructor who recorded it).
+- **UI.** The roster (session detail) and the booking detail expose the Attended / No-show actions to
+  instructors on their own sessions; Cancel and Add-note stay staff-only. UI visibility is a
+  convenience — the server is the authority.
+- **Tests.** `tests/integration/attendance-authorization.test.ts` pins the full matrix: staff-any,
+  primary-instructor-own, co-instructor-own → 200; unrelated instructor → 404 (booking unmodified);
+  unauthenticated → 401; nonexistent id → 404; WAITLISTED → 422 (state machine intact for
+  instructors); instructor cancel/note → 403 (staff-only preserved). The capability-table snapshot
+  test is updated to pin the new row.
