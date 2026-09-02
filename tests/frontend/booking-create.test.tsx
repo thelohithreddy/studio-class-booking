@@ -107,9 +107,9 @@ describe('BookingCreateDrawer', () => {
 
     await user.click(screen.getByRole('button', { name: /create booking/i }))
 
-    const alert = await screen.findByText(/added to the waitlist/i)
+    const alert = await screen.findByText(/added to waitlist/i)
     expect(alert).toBeInTheDocument()
-    expect(screen.getByText(/not a confirmed spot/i)).toBeInTheDocument()
+    expect(screen.getByText(/isn.t a confirmed seat/i)).toBeInTheDocument()
 
     // The POST carried exactly the member + session the user picked by name.
     const postCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
@@ -171,8 +171,8 @@ describe('BookingCreateDrawer', () => {
 
     expect(await screen.findByText(/membership has expired/i)).toBeInTheDocument()
     // Critically, no false-success panel is shown.
-    expect(screen.queryByText(/spot confirmed/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/added to the waitlist/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/booking confirmed/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/added to waitlist/i)).not.toBeInTheDocument()
   })
 
   it('shows a confirmed-spot outcome when the server books directly', async () => {
@@ -186,6 +186,6 @@ describe('BookingCreateDrawer', () => {
     await user.click(await screen.findByRole('button', { name: /Vinyasa Flow/ }))
     await user.click(screen.getByRole('button', { name: /create booking/i }))
 
-    expect(await screen.findByText(/spot confirmed/i)).toBeInTheDocument()
+    expect(await screen.findByText(/booking confirmed/i)).toBeInTheDocument()
   })
 })
