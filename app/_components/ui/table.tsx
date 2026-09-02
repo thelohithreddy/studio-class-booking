@@ -18,7 +18,7 @@ export function Table({ children, className }: { children: React.ReactNode; clas
 
 export function THead({ children }: { children: React.ReactNode }) {
   return (
-    <thead className="border-b border-line bg-surface-2/60">
+    <thead className="border-b border-line">
       <tr>{children}</tr>
     </thead>
   )
@@ -76,7 +76,7 @@ export function Th({
       scope={scope}
       aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : undefined}
       className={cn(
-        'px-3 py-2.5 text-xs font-semibold tracking-wide text-muted uppercase',
+        'px-4 py-2.5 text-[0.6875rem] font-semibold tracking-[0.06em] text-subtle uppercase',
         alignClass[align],
         className,
       )}
@@ -113,7 +113,7 @@ export function Tr({
       onClick={onClick}
       className={cn(
         'border-b border-line last:border-0',
-        interactive && 'cursor-pointer transition-colors hover:bg-surface-2/70',
+        interactive && 'cursor-pointer transition-colors hover:bg-surface-2/60',
         className,
       )}
     >
@@ -136,7 +136,7 @@ export function Td({
   return (
     <td
       colSpan={colSpan}
-      className={cn('px-3 py-3 align-middle text-fg', alignClass[align], className)}
+      className={cn('px-4 py-3.5 align-middle text-fg', alignClass[align], className)}
     >
       {children}
     </td>

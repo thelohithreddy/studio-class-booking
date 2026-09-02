@@ -50,27 +50,34 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-canvas px-4 py-10">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <span className="flex size-11 items-center justify-center rounded-xl bg-brand text-brand-fg shadow-sm">
+      <div className="w-full max-w-[380px]">
+        {/* Brand lockup */}
+        <div className="mb-9 flex flex-col items-center gap-4 text-center">
+          <span className="flex size-12 items-center justify-center rounded-[14px] bg-brand text-brand-fg shadow-sm">
             <svg
               viewBox="0 0 24 24"
               className="size-6"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2.1"
+              strokeWidth="2.2"
               aria-hidden="true"
             >
               <path d="M6 15V9M10 18V6M14 16V8M18 13v-2" strokeLinecap="round" />
             </svg>
           </span>
           <div>
-            <h1 className="text-lg font-semibold tracking-tight text-fg">Sign in to Cadence</h1>
-            <p className="mt-1 text-sm text-muted">Studio scheduling &amp; membership operations</p>
+            <h1 className="text-[1.35rem] font-semibold tracking-tight text-fg">Cadence</h1>
+            <p className="eyebrow mt-0.5">Studio Operations</p>
           </div>
         </div>
 
-        <div className="rounded-xl border border-line bg-surface p-6 shadow-sm">
+        <div className="rounded-2xl border border-line bg-surface p-7 shadow-sm">
+          <div className="mb-5">
+            <h2 className="text-base font-semibold text-fg">Sign in</h2>
+            <p className="mt-0.5 text-[0.8125rem] text-muted">
+              Welcome back — sign in to continue.
+            </p>
+          </div>
           <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
             <TextInput
               label="Email"
@@ -101,7 +108,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-subtle">
-          Access is managed by your studio administrator.
+          Studio operations, simplified. Access is managed by your studio administrator.
         </p>
       </div>
     </main>

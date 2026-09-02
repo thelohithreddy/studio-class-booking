@@ -3,10 +3,11 @@
 
 import { cn } from '@app/_lib/cn'
 
-/** The primary surface: a bordered, subtly elevated panel on the app canvas. */
+/** The primary surface: a flat, hairline-bordered panel on the app canvas.
+ *  Elevation is reserved for things that actually float (menus, dialogs). */
 export function Card({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('rounded-lg border border-line bg-surface shadow-sm', className)} {...props}>
+    <div className={cn('rounded-xl border border-line bg-surface', className)} {...props}>
       {children}
     </div>
   )
@@ -26,13 +27,13 @@ export function CardHeader({
   return (
     <div
       className={cn(
-        'flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5',
+        'flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4',
         className,
       )}
     >
       <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-fg">{title}</h2>
-        {description ? <p className="mt-0.5 text-xs text-muted">{description}</p> : null}
+        <h2 className="text-[0.9375rem] font-semibold text-fg">{title}</h2>
+        {description ? <p className="mt-0.5 text-[0.8125rem] text-muted">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </div>

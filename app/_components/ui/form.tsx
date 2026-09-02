@@ -7,11 +7,11 @@ import { cn } from '@app/_lib/cn'
 
 /** Shared control surface — one look for every input, select, and combobox. */
 export const controlClass =
-  'w-full rounded-md border border-line-strong bg-surface px-3 text-sm text-fg ' +
-  'shadow-xs transition-[border,box-shadow] placeholder:text-subtle ' +
-  'focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/35 ' +
+  'w-full rounded-lg border border-line-strong bg-surface px-3 text-sm text-fg ' +
+  'transition-[border-color,box-shadow] placeholder:text-subtle ' +
+  'focus:border-brand focus:outline-none focus:ring-[3px] focus:ring-ring/22 ' +
   'disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-[color:var(--tone-danger)] ' +
-  'aria-invalid:ring-[color:var(--tone-danger)]/25'
+  'aria-invalid:ring-[color:var(--tone-danger)]/20'
 
 const fieldHeight = 'h-9'
 

@@ -3,7 +3,7 @@
 
 import { cn } from '@app/_lib/cn'
 import { initials } from '@app/_lib/format'
-import type { StatusMeta, Tone } from '@app/_lib/status'
+import type { StatusIcon, StatusMeta, Tone } from '@app/_lib/status'
 
 const toneClass: Record<Tone, string> = {
   success: 'tone-success',
@@ -13,9 +13,49 @@ const toneClass: Record<Tone, string> = {
   neutral: 'tone-neutral',
 }
 
+/** Small shape glyphs so status reads without color. */
+function StatusGlyph({ icon }: { icon: StatusIcon }) {
+  const common = { className: 'size-3 shrink-0', 'aria-hidden': true } as const
+  if (icon === 'dot')
+    return <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
+  if (icon === 'check')
+    return (
+      <svg {...common} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="m3.5 8.5 3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  if (icon === 'clock')
+    return (
+      <svg {...common} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <circle cx="8" cy="8" r="6" />
+        <path d="M8 4.75V8l2.25 1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  if (icon === 'cross')
+    return (
+      <svg {...common} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="m4.5 4.5 7 7m0-7-7 7" strokeLinecap="round" />
+      </svg>
+    )
+  if (icon === 'alert')
+    return (
+      <svg {...common} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
+        <path d="M8 5v3.5" strokeLinecap="round" />
+        <circle cx="8" cy="11.2" r="0.35" fill="currentColor" stroke="none" />
+        <path d="M8 2 1.5 13.5h13L8 2Z" strokeLinejoin="round" />
+      </svg>
+    )
+  // dash
+  return (
+    <svg {...common} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 8h8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export interface BadgeProps {
   tone?: Tone
-  /** Show a leading status dot (meaning never rests on color alone, but the dot reinforces it). */
+  /** Show a leading status dot. */
   dot?: boolean
   className?: string
   children: React.ReactNode
@@ -27,7 +67,7 @@ export function Badge({ tone = 'neutral', dot = false, className, children, titl
     <span
       title={title}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap',
+        'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap',
         toneClass[tone],
         className,
       )}
@@ -38,12 +78,20 @@ export function Badge({ tone = 'neutral', dot = false, className, children, titl
   )
 }
 
-/** A badge driven by a StatusMeta — always renders label + dot together. */
+/** A status chip driven by StatusMeta — icon + label + subtle tone. */
 export function StatusBadge({ meta, className }: { meta: StatusMeta; className?: string }) {
   return (
-    <Badge tone={meta.tone} dot title={meta.description} className={className}>
+    <span
+      title={meta.description}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap',
+        toneClass[meta.tone],
+        className,
+      )}
+    >
+      <StatusGlyph icon={meta.icon} />
       {meta.label}
-    </Badge>
+    </span>
   )
 }
 
@@ -63,13 +111,13 @@ export function Pill({ children, className }: { children: React.ReactNode; class
 
 /** Deterministic monogram avatar from a name (no external images). */
 export function Avatar({ name, className }: { name: string; className?: string }) {
-  const hues = ['#6366f1', '#0ea5e9', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6']
+  const hues = ['#5b5bd6', '#0d9488', '#0284c7', '#c2410c', '#9333ea', '#be123c']
   let hash = 0
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) % hues.length
   return (
     <span
       aria-hidden="true"
-      style={{ backgroundColor: `${hues[hash]}22`, color: hues[hash] }}
+      style={{ backgroundColor: `${hues[hash]}1f`, color: hues[hash] }}
       className={cn(
         'inline-flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
         className,
