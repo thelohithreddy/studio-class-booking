@@ -717,3 +717,41 @@ bookingScopeWhere(actor)] } })`). An out-of-scope id is therefore indistinguisha
   unauthenticated → 401; nonexistent id → 404; WAITLISTED → 422 (state machine intact for
   instructors); instructor cancel/note → 403 (staff-only preserved). The capability-table snapshot
   test is updated to pin the new row.
+
+## Decision 35 — Production TLS, connection-pool sizing, and a readiness probe are enforced in code, not trusted from the URL
+
+- **Context.** The Phase 17 audit found two production-configuration risks (no P0/P1 code defects):
+  the runtime DB connection did not itself enforce certificate verification, and the pool size was
+  implicit. Both are deploy-time concerns, but leaving TLS to a URL query param is fragile — a single
+  `sslmode=no-verify` in a deploy dashboard silently downgrades production DB traffic to
+  encrypted-but-unverified (MITM-able).
+- **TLS decided in code (`src/lib/db.ts` `resolvePoolConfig`).** node-postgres lets a connection-string
+  `sslmode` OVERRIDE an explicit `ssl` config object (`Object.assign({}, config, parse(url))`), and
+  `sslmode=no-verify` parses to `{ rejectUnauthorized: false }`. So the URL is NOT trusted for TLS: every
+  `ssl*` param is stripped from the connection string and the posture is set here —
+  **local host (docker dev/test) → `ssl:false`** (local Postgres speaks plaintext); **any remote host →
+  verified TLS** (`rejectUnauthorized: true`, optionally against a provider CA from `DATABASE_CA_CERT`).
+  Fail-closed: a remote certificate that does not verify aborts the connection. There is no code path
+  to `no-verify`/`disable`. Host-based (not `NODE_ENV`-based) so a remote connection is verified no
+  matter how the process is labelled, and local tooling stays plaintext. (In this pinned stack —
+  pg 8.23 / pg-connection-string 2.14 — `sslmode=require` is itself already an alias for `verify-full`;
+  the migration CLI reads `DIRECT_URL`'s `sslmode` directly, so `.env.example` recommends
+  `sslmode=verify-full` there too.)
+- **Bounded, explicit pool.** `max` is set explicitly (pg's own default 10) and overridable via
+  `DATABASE_POOL_MAX`, so a deploy behind a Supabase-class transaction pooler can pin a small
+  per-instance ceiling (e.g. 3) and never storm Postgres. `connection_limit`/`pgbouncer` URL params are
+  dead letters with the driver adapter — this is the real knob.
+- **Readiness vs liveness.** `/api/health` stays DB-free (a DB blip must not fail liveness and trigger a
+  restart loop). A NEW `/api/health/ready` runs `SELECT 1` → `200 {status:'ready'}` / `503
+{status:'unavailable'}`, bounded by its own timeout (`checkDatabaseReady` in `src/lib/health.ts`) so a
+  hung connection cannot hang the probe. The body is a fixed status token — never a connection string,
+  error, or DB detail; public and unauthenticated like any probe.
+- **Rate limiter — kept, not redistributed.** The documented deployment target is a long-running Node
+  server (Render-class), where the per-process in-memory failure buckets ARE the aggregate limit. Adding
+  a shared store (Redis) would be unjustified infrastructure for the stated topology. The limitation
+  (per-process; a future multi-instance/serverless deploy needs a shared store) stays documented, not
+  papered over. Argon2id, generic auth errors, and DB-backed sessions are the controls that do not
+  depend on process locality.
+- **Not changed.** No authentication, authorization, booking-concurrency, schema, or UI change. The
+  cookie flags, origin/CSRF guard, and X-Forwarded-For usage (secondary rate bucket only) were
+  re-verified and left as-is.

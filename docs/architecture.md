@@ -21,8 +21,13 @@ Request-handling conventions, established Phase 3 and binding for every later ph
   else → generic 500 that logs a scrubbed cause and reveals nothing) → default
   `Cache-Control: no-store`.
 - **No GET handler ever mutates state.** The CSRF model depends on this invariant.
-- **`/api/health` stays outside the stack** — public, DB-free, so deploy probes cannot be
-  broken by auth or taxonomy changes.
+- **`/api/health` stays outside the stack** — public, DB-free liveness, so deploy probes cannot be
+  broken by auth or taxonomy changes. **`/api/health/ready`** is the companion readiness probe: it
+  runs `SELECT 1` (bounded by its own timeout) → `200 {status:'ready'}` / `503 {status:'unavailable'}`,
+  body a fixed token with no DB detail. Liveness answers "is the process up"; readiness answers "can
+  it serve traffic" — a route traffic gate, not a restart signal. Readiness touches the shared pool, so
+  route it from the orchestrator/VPC rather than the public edge (or throttle it) so it is not an
+  unauthenticated DB-load surface.
 - Identity comes only from `getSessionUser(req)` / `requireUser(req)`
   (`src/server/auth/session.ts`) — no route parses cookies itself.
 
@@ -203,7 +208,9 @@ overbooks). The Phase-2 constraints (`booked_count ≤ capacity`; one active boo
 member+session) are the race-safe defense-in-depth. Single-lock-anchor ⇒ no deadlocks (each
 booking transaction locks exactly one session row and never a second). Transaction options are
 explicit (`maxWait 10s / timeout 15s`) as headroom for production bursts beyond the tested
-scale; connection-pool sizing is a deploy-phase concern.
+scale; the pg pool is bounded explicitly (`max`, default 10, overridable via `DATABASE_POOL_MAX`
+so a deploy behind a transaction pooler can pin a small per-instance ceiling — see
+`resolvePoolConfig` in `src/lib/db.ts`).
 
 **Authorization:** create/cancel/settle/note are `booking:manage` (staff only — instructors
 403); reads (`GET /api/bookings`, `/api/bookings/[id]`) use `bookingScopeWhere` so an
