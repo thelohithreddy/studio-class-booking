@@ -5,6 +5,7 @@ import { useState } from 'react'
 
 import { apiSend } from '@app/_lib/api'
 import { qk, useApiMutation } from '@app/_lib/query'
+import { useResetOnOpen } from '@app/_lib/use-reset-on-open'
 import { formatDuration } from '@app/_lib/format'
 import type { ClassDTO, ClassResponse } from '@app/_lib/types'
 import { Button, Callout, Drawer, TextArea, TextInput, useToast } from '@app/_components/ui'
@@ -65,7 +66,9 @@ export function ClassFormDrawer({
         : apiSend<ClassResponse>('/api/classes', 'POST', body)
     },
     {
-      invalidate: [qk.classes(), ...(cls ? [qk.class(cls.id)] : [])],
+      // Editing a class changes its denormalized title on session and booking
+      // rows, so refresh those lists too.
+      invalidate: [qk.classes(), qk.sessions(), ...(cls ? [qk.class(cls.id), qk.bookings()] : [])],
       onSuccess: () => {
         toast.success(isEdit ? 'Class updated' : 'Class created')
         onSaved?.()
@@ -73,6 +76,7 @@ export function ClassFormDrawer({
       },
     },
   )
+  useResetOnOpen(open, mutation.reset)
 
   return (
     <Drawer

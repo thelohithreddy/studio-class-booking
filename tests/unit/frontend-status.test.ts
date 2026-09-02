@@ -86,8 +86,14 @@ describe('classState', () => {
 })
 
 describe('booking status table', () => {
-  it('covers all five statuses in a stable order', () => {
-    expect(BOOKING_STATUS_ORDER).toHaveLength(5)
+  it('covers all five statuses in the exact stable order it names', () => {
+    expect(BOOKING_STATUS_ORDER).toEqual([
+      'BOOKED',
+      'WAITLISTED',
+      'ATTENDED',
+      'NO_SHOW',
+      'CANCELLED',
+    ])
     for (const status of BOOKING_STATUS_ORDER) {
       expect(BOOKING_STATUS[status].label).toBeTruthy()
     }

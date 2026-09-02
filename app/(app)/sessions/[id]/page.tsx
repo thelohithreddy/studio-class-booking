@@ -75,8 +75,10 @@ export default function SessionDetailPage() {
     }
   }
 
+  const classId = session.data?.session.classId
   const deleteSession = useApiMutation(() => apiSend(`/api/sessions/${id}`, 'DELETE'), {
-    invalidate: [qk.sessions()],
+    // Also refresh the class (its session count) and the class list.
+    invalidate: [qk.sessions(), qk.classes(), ...(classId ? [qk.class(classId)] : [])],
     onSuccess: () => {
       toast.success('Session deleted')
       router.replace('/sessions')
@@ -492,8 +494,11 @@ function BookingRosterRow({
         </Link>
         <p className="text-xs text-subtle">Sign-up #{booking.seq}</p>
       </div>
+      {/* Status is always visible (mobile included); quick-settle buttons are an
+          added convenience on wider screens, with the same actions in the menu. */}
+      <StatusBadge meta={meta} />
       {staff && started && booking.status === 'BOOKED' ? (
-        <div className="hidden items-center gap-1.5 sm:flex">
+        <div className="hidden items-center gap-1.5 lg:flex">
           <Button variant="secondary" size="sm" onClick={() => onSettle('ATTENDED')} loading={busy}>
             Attended
           </Button>
@@ -501,9 +506,7 @@ function BookingRosterRow({
             No-show
           </Button>
         </div>
-      ) : (
-        <StatusBadge meta={meta} />
-      )}
+      ) : null}
       {staff ? <Menu label={`Actions for ${booking.member.name}`} items={items} /> : null}
     </li>
   )
@@ -596,7 +599,14 @@ function InstructorsPanel({ sessionId, staff }: { sessionId: string; staff: bool
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <div className="flex-1">
-                    <InstructorPicker value={addId} onChange={(v) => setAddId(v)} />
+                    <InstructorPicker
+                      value={addId}
+                      onChange={(v) => setAddId(v)}
+                      excludeIds={[
+                        data.instructors.primary.id,
+                        ...data.instructors.coInstructors.map((ci) => ci.id),
+                      ]}
+                    />
                   </div>
                   <Button
                     icon={<IconUser className="size-4" />}

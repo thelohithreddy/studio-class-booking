@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { keepPreviousData } from '@tanstack/react-query'
 
 import { apiSend } from '@app/_lib/api'
 import { qk, useApiMutation, useApiQuery } from '@app/_lib/query'
@@ -25,6 +26,7 @@ import {
   EmptyState,
   ErrorState,
   PageHeader,
+  Pagination,
   Pill,
   Skeleton,
   StatusBadge,
@@ -42,9 +44,11 @@ export default function ClassDetailPage() {
   const confirm = useConfirm()
 
   const cls = useApiQuery<ClassDetailResponse>(qk.class(id), `/api/classes/${id}`)
+  const [sessionPage, setSessionPage] = useState(1)
   const sessions = useApiQuery<SessionListResponse>(
-    qk.sessions({ classId: id }),
-    `/api/sessions?classId=${id}&pageSize=100`,
+    qk.sessions({ classId: id, page: sessionPage }),
+    `/api/sessions?classId=${id}&page=${sessionPage}&pageSize=10`,
+    { placeholderData: keepPreviousData },
   )
 
   const [editing, setEditing] = useState(false)
@@ -151,6 +155,8 @@ export default function ClassDetailPage() {
                           size="sm"
                           icon={<IconRepeat className="size-4" />}
                           onClick={() => setGenerating(true)}
+                          disabled={isArchived}
+                          title={isArchived ? 'Restore the class to schedule sessions' : undefined}
                         >
                           Generate
                         </Button>
@@ -158,13 +164,20 @@ export default function ClassDetailPage() {
                           size="sm"
                           icon={<IconPlus className="size-4" />}
                           onClick={() => setScheduling(true)}
+                          disabled={isArchived}
+                          title={isArchived ? 'Restore the class to schedule sessions' : undefined}
                         >
                           Schedule
                         </Button>
                       </div>
                     }
                   />
-                  <ClassSessions query={sessions} onSchedule={() => setScheduling(true)} />
+                  <ClassSessions
+                    query={sessions}
+                    onSchedule={() => setScheduling(true)}
+                    onPageChange={setSessionPage}
+                    canSchedule={!isArchived}
+                  />
                 </Card>
               </div>
 
@@ -186,9 +199,13 @@ export default function ClassDetailPage() {
 function ClassSessions({
   query,
   onSchedule,
+  onPageChange,
+  canSchedule,
 }: {
   query: ReturnType<typeof useApiQuery<SessionListResponse>>
   onSchedule: () => void
+  onPageChange: (page: number) => void
+  canSchedule: boolean
 }) {
   return (
     <AsyncBoundary
@@ -205,19 +222,31 @@ function ClassSessions({
           title="No sessions scheduled"
           description="Schedule a one-off session or generate a recurring weekly pattern to fill the calendar."
           action={
-            <Button size="sm" onClick={onSchedule}>
-              Schedule a session
-            </Button>
+            canSchedule ? (
+              <Button size="sm" onClick={onSchedule}>
+                Schedule a session
+              </Button>
+            ) : undefined
           }
         />
       }
     >
       {(data) => (
-        <ul className="divide-y divide-line">
-          {data.sessions.map((s) => (
-            <ClassSessionRow key={s.id} session={s} />
-          ))}
-        </ul>
+        <>
+          <ul className="divide-y divide-line">
+            {data.sessions.map((s) => (
+              <ClassSessionRow key={s.id} session={s} />
+            ))}
+          </ul>
+          {data.total > data.pageSize ? (
+            <Pagination
+              page={data.page}
+              pageSize={data.pageSize}
+              total={data.total}
+              onPageChange={onPageChange}
+            />
+          ) : null}
+        </>
       )}
     </AsyncBoundary>
   )
@@ -231,9 +260,12 @@ function ClassSessionRow({ session }: { session: SessionListItem }) {
         href={`/sessions/${session.id}`}
         className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/70 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
       >
-        <div className="flex size-10 shrink-0 flex-col items-center justify-center rounded-md border border-line bg-surface-2 text-center">
-          <span className="text-[0.65rem] font-medium text-subtle uppercase">
-            {formatDateTime(session.startsAt).split(',')[0]}
+        <div className="flex size-11 shrink-0 flex-col items-center justify-center rounded-md border border-line bg-surface-2 text-center leading-none">
+          <span className="text-[0.6rem] font-semibold text-subtle uppercase">
+            {new Date(session.startsAt).toLocaleDateString(undefined, { month: 'short' })}
+          </span>
+          <span className="tabular text-base font-semibold text-fg">
+            {new Date(session.startsAt).toLocaleDateString(undefined, { day: 'numeric' })}
           </span>
         </div>
         <div className="min-w-0 flex-1">
@@ -243,9 +275,18 @@ function ClassSessionRow({ session }: { session: SessionListItem }) {
             {session.primaryInstructor.name}
           </p>
         </div>
-        <Badge tone={fill.tone} dot>
-          {session.bookedCount}/{session.capacity}
-        </Badge>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="tabular text-xs font-medium text-muted">
+            {session.bookedCount}/{session.capacity}
+          </span>
+          <Badge
+            tone={fill.tone}
+            dot
+            title={`${session.bookedCount} of ${session.capacity} booked`}
+          >
+            {fill.label}
+          </Badge>
+        </div>
       </Link>
     </li>
   )

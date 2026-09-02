@@ -48,6 +48,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         open={options !== null}
         onClose={() => settle(false)}
         title={options?.title}
+        description={options?.description ?? 'Are you sure you want to continue?'}
         size="sm"
         footer={
           <>
@@ -64,9 +65,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
           </>
         }
       >
-        <div className="text-sm text-muted">
-          {options?.description ?? 'Are you sure you want to continue?'}
-        </div>
+        {null}
       </Dialog>
     </ConfirmContext.Provider>
   )

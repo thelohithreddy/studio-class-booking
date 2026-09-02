@@ -1,11 +1,13 @@
 'use client'
 
 import { Suspense, useState } from 'react'
+import { keepPreviousData } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
 
 import { apiSend } from '@app/_lib/api'
 import { qk, useApiMutation, useApiQuery } from '@app/_lib/query'
 import { useDebouncedValue } from '@app/_lib/use-debounced'
+import { useResetOnOpen } from '@app/_lib/use-reset-on-open'
 import { formatMembershipDate, toDateInputValue } from '@app/_lib/format'
 import { membershipFromExpiry } from '@app/_lib/status'
 import type { Member, MemberListResponse, MemberResponse } from '@app/_lib/types'
@@ -60,7 +62,9 @@ function MembersPageInner() {
   const params = new URLSearchParams({ page: String(page), pageSize: '20' })
   if (q) params.set('q', q)
   const key = qk.members({ q, page })
-  const members = useApiQuery<MemberListResponse>(key, `/api/members?${params.toString()}`)
+  const members = useApiQuery<MemberListResponse>(key, `/api/members?${params.toString()}`, {
+    placeholderData: keepPreviousData,
+  })
 
   function onSearchChange(value: string) {
     setRawQuery(value)
@@ -254,6 +258,7 @@ function MemberDrawer({ editing, onClose }: { editing: Editing; onClose: () => v
       },
     },
   )
+  useResetOnOpen(open, mutation.reset)
 
   function submit(e: React.FormEvent) {
     e.preventDefault()

@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 
 import { cn } from '@app/_lib/cn'
 import { useIsClient } from '@app/_lib/use-is-client'
+import { escGuard } from '@app/_lib/overlay-stack'
 import { IconButton } from './button'
 
 const FOCUSABLE =
@@ -15,13 +16,25 @@ const FOCUSABLE =
  * Shared modal behavior for Dialog & Drawer: lock body scroll, move focus into
  * the panel, trap Tab inside it, close on Escape, and return focus to the
  * trigger on close. Everything a real modal owes a keyboard/AT user.
+ *
+ * `onClose` is read through a ref so the effect depends ONLY on `open`. Callers
+ * pass an inline `() => setOpen(false)`; re-running this effect on every parent
+ * re-render (e.g. a background refetch) would yank focus back to the first field
+ * mid-edit. Escape is ignored while a nested popup (a Combobox) is open, so the
+ * picker closes first instead of tearing down the whole drawer.
  */
-function useDialogA11y(
+export function useDialogA11y(
   open: boolean,
   onClose: () => void,
   panelRef: React.RefObject<HTMLElement | null>,
 ) {
   const restore = useRef<HTMLElement | null>(null)
+  const onCloseRef = useRef(onClose)
+  // Keep the ref pointing at the latest onClose without depending on it in the
+  // main effect (updating a ref during render is disallowed).
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
 
   useEffect(() => {
     if (!open) return
@@ -35,8 +48,9 @@ function useDialogA11y(
 
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
+        if (escGuard.blocked()) return // a nested popup (combobox) owns this Escape
         e.stopPropagation()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (e.key !== 'Tab' || !panel) return
@@ -65,7 +79,7 @@ function useDialogA11y(
       document.body.style.overflow = prevOverflow
       restore.current?.focus?.()
     }
-  }, [open, onClose, panelRef])
+  }, [open, panelRef])
 }
 
 type DialogSize = 'sm' | 'md' | 'lg' | 'xl'

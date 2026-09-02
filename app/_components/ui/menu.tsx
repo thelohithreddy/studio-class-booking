@@ -30,28 +30,62 @@ export function Menu({
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
 
   useEffect(() => {
     if (!open) return
     function onDoc(e: MouseEvent) {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
     }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
-    }
     document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
+    // Move focus to the first item when the menu opens (keyboard entry point).
+    const raf = requestAnimationFrame(() =>
+      listRef.current
+        ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([disabled])')
+        ?.focus(),
+    )
     return () => {
       document.removeEventListener('mousedown', onDoc)
-      document.removeEventListener('keydown', onKey)
+      cancelAnimationFrame(raf)
     }
   }, [open])
+
+  function close(returnFocus = false) {
+    setOpen(false)
+    if (returnFocus) triggerRef.current?.focus()
+  }
+
+  // Roving focus across menu items (WAI-ARIA menu pattern).
+  function onMenuKeyDown(e: React.KeyboardEvent) {
+    const buttons = Array.from(
+      listRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ??
+        [],
+    )
+    const idx = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      buttons[Math.min(idx + 1, buttons.length - 1)]?.focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      buttons[Math.max(idx - 1, 0)]?.focus()
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      buttons[0]?.focus()
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      buttons[buttons.length - 1]?.focus()
+    } else if (e.key === 'Escape' || e.key === 'Tab') {
+      close(e.key === 'Escape')
+    }
+  }
 
   if (items.length === 0) return null
 
   return (
     <div ref={rootRef} className="relative">
       <IconButton
+        ref={triggerRef}
         label={label}
         variant="ghost"
         size="sm"
@@ -67,7 +101,10 @@ export function Menu({
       </IconButton>
       {open ? (
         <ul
+          ref={listRef}
           role="menu"
+          aria-label={label}
+          onKeyDown={onMenuKeyDown}
           className={cn(
             'anim-pop-in absolute z-30 mt-1 min-w-44 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-lg',
             align === 'right' ? 'right-0' : 'left-0',

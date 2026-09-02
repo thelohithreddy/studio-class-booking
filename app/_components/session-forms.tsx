@@ -5,7 +5,8 @@ import { useState } from 'react'
 
 import { apiSend } from '@app/_lib/api'
 import { qk, useApiMutation, useInvalidate } from '@app/_lib/query'
-import { toDateTimeLocalValue } from '@app/_lib/format'
+import { formatMembershipDate, toDateTimeLocalValue } from '@app/_lib/format'
+import { useResetOnOpen } from '@app/_lib/use-reset-on-open'
 import type { GenerateResult, SessionResponse } from '@app/_lib/types'
 import {
   Button,
@@ -127,6 +128,7 @@ export function SessionFormDrawer({
       },
     },
   )
+  useResetOnOpen(open, mutation.reset)
 
   const instructorItem: ComboboxItem | null = edit
     ? { value: edit.primaryInstructorId, label: edit.primaryInstructorName }
@@ -292,11 +294,22 @@ export function GenerateDrawer({
   const [weekdays, setWeekdays] = useState<number[]>([])
   const [result, setResult] = useState<GenerateResult | null>(null)
 
-  // Reset each time the drawer opens.
+  // Reset the whole form (fields, weekdays, and any previous result) each time
+  // the drawer opens, so a new run never inherits the last one's inputs.
   const [wasOpen, setWasOpen] = useState(false)
   if (open && !wasOpen) {
     setWasOpen(true)
     setResult(null)
+    setForm({
+      primaryInstructorId: '',
+      roomId: '',
+      startDate: '',
+      endDate: '',
+      startTime: '18:00',
+      durationMinutes: '',
+      capacity: '',
+    })
+    setWeekdays([])
   }
   if (!open && wasOpen) setWasOpen(false)
 
@@ -326,6 +339,7 @@ export function GenerateDrawer({
       },
     },
   )
+  useResetOnOpen(open, mutation.reset)
 
   const canSubmit = Boolean(
     form.primaryInstructorId &&
@@ -497,7 +511,7 @@ function GenerateSummary({ result }: { result: GenerateResult }) {
                 key={`${s.date}-${i}`}
                 className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
               >
-                <span className="text-fg">{s.date}</span>
+                <span className="text-fg">{formatMembershipDate(s.date)}</span>
                 <span className="text-muted">
                   {s.reason === 'room' ? 'Room already booked' : 'Instructor already booked'}
                 </span>

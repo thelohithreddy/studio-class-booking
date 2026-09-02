@@ -110,6 +110,69 @@ describe('BookingCreateDrawer', () => {
     const alert = await screen.findByText(/added to the waitlist/i)
     expect(alert).toBeInTheDocument()
     expect(screen.getByText(/not a confirmed spot/i)).toBeInTheDocument()
+
+    // The POST carried exactly the member + session the user picked by name.
+    const postCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([url, init]) => url === '/api/bookings' && init?.method === 'POST',
+    )
+    expect(postCall).toBeTruthy()
+    expect(JSON.parse(postCall![1].body)).toMatchObject({ memberId: 'm1', sessionId: 's1' })
+  })
+
+  it('shows the server error and NO success state when the booking is rejected', async () => {
+    global.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url)
+      if (u === '/api/bookings' && init?.method === 'POST') {
+        return jsonRes(
+          {
+            error: { code: 'membership_expired', message: 'This member’s membership has expired.' },
+          },
+          422,
+        )
+      }
+      if (u.startsWith('/api/members')) {
+        return jsonRes({
+          members: [{ id: 'm1', name: 'Alice Ng', email: 'alice@studio.com' }],
+          total: 1,
+          page: 1,
+          pageSize: 10,
+        })
+      }
+      return jsonRes({
+        sessions: [
+          {
+            id: 's1',
+            classId: 'c1',
+            startsAt: '2099-01-01T18:00:00.000Z',
+            endsAt: '2099-01-01T19:00:00.000Z',
+            capacity: 10,
+            bookedCount: 2,
+            roomId: 'r1',
+            primaryInstructorId: 'i1',
+            class: { title: 'Vinyasa Flow', discipline: 'Yoga' },
+            room: { name: 'Studio A' },
+            primaryInstructor: { id: 'i1', name: 'Ivy' },
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 100,
+      })
+    }) as unknown as typeof fetch
+
+    const user = userEvent.setup()
+    renderDrawer()
+
+    await user.click(screen.getByRole('combobox', { name: 'Member' }))
+    await user.click(await screen.findByRole('button', { name: /Alice Ng/ }))
+    await user.click(screen.getByRole('combobox', { name: 'Session' }))
+    await user.click(await screen.findByRole('button', { name: /Vinyasa Flow/ }))
+    await user.click(screen.getByRole('button', { name: /create booking/i }))
+
+    expect(await screen.findByText(/membership has expired/i)).toBeInTheDocument()
+    // Critically, no false-success panel is shown.
+    expect(screen.queryByText(/spot confirmed/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/added to the waitlist/i)).not.toBeInTheDocument()
   })
 
   it('shows a confirmed-spot outcome when the server books directly', async () => {

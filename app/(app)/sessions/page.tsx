@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { keepPreviousData } from '@tanstack/react-query'
 
 import { qk, useApiQuery } from '@app/_lib/query'
 import { formatDuration, formatTimeRange } from '@app/_lib/format'
@@ -39,6 +40,7 @@ export default function SessionsPage() {
   const sessions = useApiQuery<SessionListResponse>(
     qk.sessions({ classId, from, to, page }),
     `/api/sessions?${params.toString()}`,
+    { placeholderData: keepPreviousData },
   )
 
   const hasFilters = Boolean(classId || from || to)

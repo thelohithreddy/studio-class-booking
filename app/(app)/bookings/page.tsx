@@ -4,6 +4,8 @@ import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 
+import { keepPreviousData } from '@tanstack/react-query'
+
 import { qk, useApiQuery } from '@app/_lib/query'
 import { useDebouncedValue } from '@app/_lib/use-debounced'
 import { formatDateTime } from '@app/_lib/format'
@@ -89,6 +91,9 @@ function BookingsInner() {
   const bookings = useApiQuery<BookingListResponse>(
     qk.bookings({ q, status, classId, sort, dir, page }),
     `/api/bookings?${params.toString()}`,
+    // Keep the current page visible while the next page/filter/sort loads, so
+    // the table doesn't collapse to a skeleton on every interaction.
+    { placeholderData: keepPreviousData },
   )
 
   function toggleSort(field: SortField) {
@@ -246,13 +251,11 @@ function BookingsInner() {
               ))}
             </ul>
 
-            <div className="flex items-center gap-3 border-t border-line px-4 py-2 text-xs text-subtle">
-              {bookings.isFetching ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <Spinner className="size-3.5" /> Updating…
-                </span>
-              ) : null}
-            </div>
+            {bookings.isFetching ? (
+              <div className="flex items-center gap-1.5 border-t border-line px-4 py-2 text-xs text-subtle">
+                <Spinner className="size-3.5" /> Updating…
+              </div>
+            ) : null}
             <Pagination
               page={bookings.data.page}
               pageSize={bookings.data.pageSize}
@@ -297,7 +300,13 @@ function BookingTableRow({ booking, onOpen }: { booking: BookingListItem; onOpen
       <Td>
         <div className="flex items-center gap-3">
           <Avatar name={booking.member.name} />
-          <span className="font-medium text-fg">{booking.member.name}</span>
+          <Link
+            href={`/bookings/${booking.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="font-medium text-fg hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            {booking.member.name}
+          </Link>
         </div>
       </Td>
       <Td>

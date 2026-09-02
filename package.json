@@ -22,7 +22,8 @@
     "test:watch": "vitest",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "db:seed": "node scripts/seed-dev.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.0",

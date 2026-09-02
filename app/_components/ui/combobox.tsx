@@ -4,6 +4,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { cn } from '@app/_lib/cn'
+import { escGuard } from '@app/_lib/overlay-stack'
 import { controlClass } from './form'
 import { Spinner } from './feedback'
 
@@ -20,7 +21,8 @@ export interface ComboboxItem {
  * product selects members, instructors, sessions and classes by NAME — a raw
  * UUID is never typed. Pass `onSearch` for server-side search (members,
  * sessions); omit it to filter the provided `items` locally (instructors,
- * classes, rooms).
+ * classes, rooms). Pass `error` (+ optional `onRetry`) so a failed data fetch
+ * reads as an error, not an empty list.
  */
 export function Combobox({
   items,
@@ -29,6 +31,8 @@ export function Combobox({
   selectedItem,
   onSearch,
   loading = false,
+  error = null,
+  onRetry,
   placeholder = 'Select…',
   searchPlaceholder = 'Search…',
   emptyText = 'No matches',
@@ -44,6 +48,8 @@ export function Combobox({
   selectedItem?: ComboboxItem | null
   onSearch?: (term: string) => void
   loading?: boolean
+  error?: string | null
+  onRetry?: () => void
   placeholder?: string
   searchPlaceholder?: string
   emptyText?: string
@@ -61,6 +67,7 @@ export function Combobox({
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const listId = useId()
+  const optionId = (i: number) => `${listId}-opt-${i}`
 
   // Resolve the label for the current value from the best source available.
   const resolved =
@@ -78,6 +85,13 @@ export function Combobox({
       (i) => i.label.toLowerCase().includes(t) || i.description?.toLowerCase().includes(t),
     )
   }, [items, term, onSearch])
+
+  // While the popup is open it owns Escape (so it closes instead of the drawer).
+  useEffect(() => {
+    if (!open) return
+    escGuard.push()
+    return () => escGuard.pop()
+  }, [open])
 
   // Close on outside click.
   useEffect(() => {
@@ -119,13 +133,18 @@ export function Combobox({
       setActive((a) => Math.max(a - 1, 0))
     } else if (e.key === 'Enter') {
       e.preventDefault()
+      e.stopPropagation()
       const item = filtered[active]
       if (item) commit(item)
     } else if (e.key === 'Escape') {
       e.preventDefault()
+      e.stopPropagation()
       setOpen(false)
     }
   }
+
+  const activeDescendant =
+    open && !loading && !error && filtered[active] ? optionId(active) : undefined
 
   return (
     <div ref={rootRef} className="relative">
@@ -166,6 +185,10 @@ export function Combobox({
               type="text"
               value={term}
               placeholder={searchPlaceholder}
+              aria-controls={listId}
+              aria-autocomplete="list"
+              aria-activedescendant={activeDescendant}
+              aria-label={ariaLabel ? `Search ${ariaLabel.toLowerCase()}` : 'Search'}
               onChange={(e) => {
                 setTerm(e.target.value)
                 setActive(0)
@@ -180,6 +203,19 @@ export function Combobox({
               <li className="flex items-center justify-center gap-2 px-3 py-4 text-sm text-muted">
                 <Spinner className="size-4" /> Searching…
               </li>
+            ) : error ? (
+              <li className="flex flex-col items-center gap-2 px-3 py-4 text-center text-sm">
+                <span className="text-[color:var(--tone-danger)]">{error}</span>
+                {onRetry ? (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="rounded font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    Try again
+                  </button>
+                ) : null}
+              </li>
             ) : filtered.length === 0 ? (
               <li className="px-3 py-4 text-center text-sm text-muted">{emptyText}</li>
             ) : (
@@ -187,9 +223,10 @@ export function Combobox({
                 const selected = item.value === value
                 const isActive = i === active
                 return (
-                  <li key={item.value} role="option" aria-selected={selected}>
+                  <li key={item.value} id={optionId(i)} role="option" aria-selected={selected}>
                     <button
                       type="button"
+                      tabIndex={-1}
                       disabled={item.disabled}
                       onMouseEnter={() => setActive(i)}
                       onClick={() => commit(item)}

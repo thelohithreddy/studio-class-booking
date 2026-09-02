@@ -6,6 +6,7 @@ import Link from 'next/link'
 
 import { apiSend } from '@app/_lib/api'
 import { qk, useApiMutation, useInvalidate } from '@app/_lib/query'
+import { useResetOnOpen } from '@app/_lib/use-reset-on-open'
 import { BOOKING_STATUS } from '@app/_lib/status'
 import type { BookingResponse, BookingStatus } from '@app/_lib/types'
 import { Button, Callout, Drawer, TextArea } from '@app/_components/ui'
@@ -63,10 +64,19 @@ export function BookingCreateDrawer({
     {
       onSuccess: (data) => {
         setResult({ status: data.booking.status, id: data.booking.id, memberName, sessionLabel })
-        invalidate([qk.bookings(), qk.dashboard, ...(sessionId ? [qk.session(sessionId)] : [])])
+        // qk.sessions() too: a Booked result changes the session's bookedCount,
+        // which the sessions list / class detail / picker badges all display.
+        invalidate([
+          qk.bookings(),
+          qk.dashboard,
+          qk.sessions(),
+          ...(sessionId ? [qk.session(sessionId)] : []),
+        ])
       },
     },
   )
+
+  useResetOnOpen(open, mutation.reset)
 
   const canSubmit = Boolean(memberId && sessionId)
 

@@ -7,6 +7,7 @@ import { useParams } from 'next/navigation'
 import { apiSend } from '@app/_lib/api'
 import { qk, useApiMutation, useApiQuery } from '@app/_lib/query'
 import { formatDate, formatDateTime } from '@app/_lib/format'
+import { useResetOnOpen } from '@app/_lib/use-reset-on-open'
 import { BOOKING_STATUS, type Tone } from '@app/_lib/status'
 import type {
   BookingDetail,
@@ -113,7 +114,7 @@ export default function BookingDetailPage() {
                   <div className="flex items-center gap-3">
                     <Avatar name={b.member.name} className="size-11 text-sm" />
                     <div>
-                      <h1 className="text-xl font-semibold tracking-tight text-fg">
+                      <h1 className="text-xl font-semibold tracking-tight text-fg sm:text-2xl">
                         {b.member.name}
                       </h1>
                       <div className="mt-1 flex items-center gap-2">
@@ -317,6 +318,7 @@ function AddNoteDialog({
       },
     },
   )
+  useResetOnOpen(open, mutation.reset)
 
   return (
     <Dialog

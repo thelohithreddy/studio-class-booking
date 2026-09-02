@@ -24,20 +24,40 @@ interface PickerProps {
   selectedItem?: ComboboxItem | null
 }
 
-/** Choose a session's primary or co-instructor by name (never UUID). */
-export function InstructorPicker({ value, onChange, invalid, selectedItem }: PickerProps) {
+/** Turn a query's error state into picker copy (with a retry). */
+function errorOf(q: { isError: boolean; error: Error | null }): string | undefined {
+  return q.isError ? (q.error?.message ?? 'Could not load. Check your connection.') : undefined
+}
+
+/** Shared key/path for the "all classes" list used by pickers and filters. */
+export const ALL_CLASSES_KEY = qk.classes({ all: true })
+export const ALL_CLASSES_PATH = '/api/classes?pageSize=100'
+
+/**
+ * Choose a session's primary or co-instructor by name (never UUID). `excludeIds`
+ * hides instructors already assigned to the session (the primary + existing
+ * co-instructors) so staff aren't offered choices the server would reject.
+ */
+export function InstructorPicker({
+  value,
+  onChange,
+  invalid,
+  selectedItem,
+  excludeIds,
+}: PickerProps & { excludeIds?: string[] }) {
   const q = useApiQuery<InstructorListResponse>(qk.instructors, '/api/instructors')
-  const items: ComboboxItem[] = (q.data?.instructors ?? []).map((i) => ({
-    value: i.id,
-    label: i.name,
-    description: i.email,
-  }))
+  const exclude = new Set(excludeIds ?? [])
+  const items: ComboboxItem[] = (q.data?.instructors ?? [])
+    .filter((i) => !exclude.has(i.id))
+    .map((i) => ({ value: i.id, label: i.name, description: i.email }))
   return (
     <Combobox
       items={items}
       value={value}
       onChange={onChange}
       loading={q.isPending}
+      error={errorOf(q)}
+      onRetry={() => void q.refetch()}
       selectedItem={selectedItem}
       placeholder="Select an instructor"
       searchPlaceholder="Search instructors…"
@@ -58,6 +78,8 @@ export function RoomPicker({ value, onChange, invalid, selectedItem }: PickerPro
       value={value}
       onChange={onChange}
       loading={q.isPending}
+      error={errorOf(q)}
+      onRetry={() => void q.refetch()}
       selectedItem={selectedItem}
       placeholder="Select a room"
       searchPlaceholder="Search rooms…"
@@ -70,10 +92,7 @@ export function RoomPicker({ value, onChange, invalid, selectedItem }: PickerPro
 
 /** Choose an active class by title. */
 export function ClassPicker({ value, onChange, invalid, selectedItem }: PickerProps) {
-  const q = useApiQuery<ClassListResponse>(
-    qk.classes({ picker: true }),
-    '/api/classes?pageSize=100',
-  )
+  const q = useApiQuery<ClassListResponse>(ALL_CLASSES_KEY, ALL_CLASSES_PATH)
   const items: ComboboxItem[] = (q.data?.classes ?? []).map((c) => ({
     value: c.id,
     label: c.title,
@@ -85,6 +104,8 @@ export function ClassPicker({ value, onChange, invalid, selectedItem }: PickerPr
       value={value}
       onChange={onChange}
       loading={q.isPending}
+      error={errorOf(q)}
+      onRetry={() => void q.refetch()}
       selectedItem={selectedItem}
       placeholder="Select a class"
       searchPlaceholder="Search classes…"
@@ -117,6 +138,8 @@ export function MemberPicker({ value, onChange, invalid, selectedItem }: PickerP
       onChange={onChange}
       onSearch={setTerm}
       loading={q.isFetching}
+      error={errorOf(q)}
+      onRetry={() => void q.refetch()}
       selectedItem={selectedItem}
       placeholder="Select a member"
       searchPlaceholder="Search by name or email…"
@@ -159,6 +182,8 @@ export function SessionPicker({ value, onChange, invalid, selectedItem }: Picker
       value={value}
       onChange={onChange}
       loading={q.isPending}
+      error={errorOf(q)}
+      onRetry={() => void q.refetch()}
       selectedItem={selectedItem}
       placeholder="Select a session"
       searchPlaceholder="Filter by class, room or time…"

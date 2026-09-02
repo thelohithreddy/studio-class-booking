@@ -1,14 +1,16 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { cn } from '@app/_lib/cn'
 import { apiSend } from '@app/_lib/api'
 import { useAlerts } from '@app/_lib/use-alerts'
 import type { SessionUser } from '@app/_lib/types'
 import { Avatar } from '@app/_components/ui'
+import { useDialogA11y } from '@app/_components/ui/overlay'
 import { CurrentUserProvider } from './user-context'
 import {
   IconAlerts,
@@ -74,12 +76,18 @@ function AlertsNavBadge({ staff }: { staff: boolean }) {
   const count = alerts.data?.count ?? 0
   if (!staff) return null
   return count > 0 ? (
-    <span
-      className="tabular ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--tone-danger)] px-1.5 text-[0.7rem] font-semibold text-white"
-      aria-hidden="true"
-    >
-      {count}
-    </span>
+    <>
+      <span
+        className="tabular ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--tone-danger)] px-1.5 text-[0.7rem] font-semibold text-white"
+        aria-hidden="true"
+      >
+        {count}
+      </span>
+      <span className="sr-only">
+        {' '}
+        ({count} pending {count === 1 ? 'alert' : 'alerts'})
+      </span>
+    </>
   ) : null
 }
 
@@ -181,6 +189,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
   const staff = user.role === 'STAFF'
   const items = staff ? STAFF_NAV : INSTRUCTOR_NAV
 
+  const queryClient = useQueryClient()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -193,20 +202,9 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
     setMobileOpen(false)
   }
 
-  // Escape closes the mobile drawer; lock scroll while it's open.
-  useEffect(() => {
-    if (!mobileOpen) return
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setMobileOpen(false)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prev
-    }
-  }, [mobileOpen])
+  // The mobile nav is a modal drawer: trap focus, lock scroll, Escape-to-close,
+  // and return focus to the trigger — the same guarantees as any dialog.
+  useDialogA11y(mobileOpen, () => setMobileOpen(false), panelRef)
 
   async function signOut() {
     setSigningOut(true)
@@ -215,6 +213,9 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
     } catch {
       // Logout is idempotent server-side; proceed to the login page regardless.
     }
+    // Drop all cached query data so the next user on a shared machine never sees
+    // the previous user's studio data from cache. The server also re-scopes.
+    queryClient.clear()
     router.replace('/login')
     router.refresh()
   }

@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { apiSend } from '@app/_lib/api'
 import { qk, useApiMutation, useApiQuery } from '@app/_lib/query'
 import { formatDate } from '@app/_lib/format'
+import { useResetOnOpen } from '@app/_lib/use-reset-on-open'
 import type { RoomListResponse, Room, RoomResponse } from '@app/_lib/types'
 import {
   AsyncBoundary,
@@ -124,6 +125,7 @@ function RoomDrawer({ editing, onClose }: { editing: Editing; onClose: () => voi
       },
     },
   )
+  useResetOnOpen(open, mutation.reset)
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
