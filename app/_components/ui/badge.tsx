@@ -111,7 +111,7 @@ export function Pill({ children, className }: { children: React.ReactNode; class
 
 /** Deterministic monogram avatar from a name (no external images). */
 export function Avatar({ name, className }: { name: string; className?: string }) {
-  const hues = ['#5b5bd6', '#0d9488', '#0284c7', '#c2410c', '#9333ea', '#be123c']
+  const hues = ['#b0563a', '#4f7d57', '#a9761f', '#3f6f7a', '#8a5a3c', '#9c4f63']
   let hash = 0
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) % hues.length
   return (

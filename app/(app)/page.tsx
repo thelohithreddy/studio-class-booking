@@ -65,7 +65,7 @@ export default function DashboardPage() {
         {(data) => (
           <>
             <header className="flex flex-col gap-1">
-              <h1 className="text-[1.6rem] font-semibold tracking-tight text-fg">{greeting}</h1>
+              <h1 className="font-display text-[1.7rem] tracking-tight text-fg">{greeting}</h1>
               <p className="text-sm text-muted">
                 <span className="tabular font-medium text-fg">
                   {pluralize(data.headline.sessionsToday, 'session')}

@@ -1,69 +1,69 @@
 @import 'tailwindcss';
 
 /* ============================================================================
-   Cadence — design tokens
-   A neutral-forward, precision system: mostly grayscale with one restrained
-   accent, hairline borders, and elevation reserved for things that float.
-   Light is default; dark follows the OS. Every color resolves through a
-   variable here, so the whole product re-themes from one place.
+   Cadence — Warm Editorial Studio
+   Warm ivory ground, warm-white surfaces, deep warm charcoal type, hairline
+   stone borders, and ONE restrained terracotta accent. Light is the definitive
+   product experience (no OS auto-switch); a warm dark palette is kept behind an
+   explicit [data-theme="dark"] for future use but never auto-applied.
    ========================================================================== */
 :root {
   color-scheme: light;
 
-  /* Surfaces ------------------------------------------------------------- */
-  --canvas: #f7f7f9; /* app background */
-  --surface: #ffffff; /* panels, menus, rows */
-  --surface-2: #f2f2f5; /* insets, hovered rows, table heads */
-  --surface-3: #e8e8ee; /* pressed / stronger inset */
-  --overlay: rgb(17 17 22 / 0.4); /* dialog scrim */
+  /* Surfaces --------------------------------------------------------------- */
+  --canvas: #f5f1ea; /* warm ivory ground (level 0) */
+  --surface: #fefcf8; /* warm white panels (level 1) */
+  --surface-2: #eee9df; /* warm stone inset / hover / heads */
+  --surface-3: #e3ddcf; /* stronger stone (pressed) */
+  --overlay: rgb(41 37 32 / 0.36); /* warm charcoal scrim */
 
-  /* Text ----------------------------------------------------------------- */
-  --fg: #111114; /* primary */
-  --muted: #61616b; /* secondary */
-  --subtle: #90909a; /* tertiary / placeholder */
-  --brand-fg: #ffffff; /* text on a brand-filled surface */
+  /* Text ------------------------------------------------------------------- */
+  --fg: #292623; /* deep warm charcoal */
+  --muted: #6d675e; /* warm gray */
+  --subtle: #9b9286; /* warm gray, quiet */
+  --brand-fg: #ffffff;
 
-  /* Lines — hairlines, deliberately low-contrast ------------------------- */
-  --line: #ececef;
-  --line-strong: #dddde2;
+  /* Lines — hairline warm stone ------------------------------------------- */
+  --line: #e7e1d5;
+  --line-strong: #d8d0c1;
 
-  /* Accent (indigo-violet) — used sparingly ------------------------------ */
-  --brand: #5b5bd6;
-  --brand-hover: #5151c9;
-  --brand-active: #4747b5;
-  --brand-subtle: #f0f0fd;
-  --brand-subtle-fg: #4a4ac0;
-  --ring: #7573e0;
+  /* Accent — terracotta, used sparingly ----------------------------------- */
+  --brand: #c05f3c;
+  --brand-hover: #a94f30;
+  --brand-active: #8f4227;
+  --brand-subtle: #f6ece4;
+  --brand-subtle-fg: #9c4a2b;
+  --ring: #cf7550;
 
-  /* Destructive action --------------------------------------------------- */
-  --danger-solid: #e5484d;
-  --danger-solid-hover: #d33a3f;
+  /* Destructive — a true red, distinct from the terracotta accent --------- */
+  --danger-solid: #c23c30;
+  --danger-solid-hover: #a9332a;
 
-  /* Status tones — subtle fill + solid text + hairline; always paired with
-     an icon + label so meaning never rests on hue. */
-  --tone-success: #0f7a3d;
-  --tone-success-bg: #edf9f1;
-  --tone-success-line: #c5ecd2;
-  --tone-warning: #9a5b06;
-  --tone-warning-bg: #fdf6ea;
-  --tone-warning-line: #f1dcae;
-  --tone-danger: #c62a2f;
-  --tone-danger-bg: #fdf2f2;
-  --tone-danger-line: #f4cccd;
-  --tone-info: #3a44c9;
-  --tone-info-bg: #eef0fd;
-  --tone-info-line: #d3d6f8;
-  --tone-neutral: #5a5a63;
-  --tone-neutral-bg: #f3f3f5;
-  --tone-neutral-line: #e5e5e9;
+  /* Status tones — icon + text carry meaning; hue is reinforcement only.
+     Sage / ochre / brick / slate / stone — all warm-leaning. */
+  --tone-success: #3f7d52;
+  --tone-success-bg: #edf4ec;
+  --tone-success-line: #cee3ce;
+  --tone-warning: #9a6512;
+  --tone-warning-bg: #f9f1dd;
+  --tone-warning-line: #ecd8ab;
+  --tone-danger: #ba3a2e;
+  --tone-danger-bg: #fbeae7;
+  --tone-danger-line: #f1cbc4;
+  --tone-info: #3d5b79;
+  --tone-info-bg: #eef2f6;
+  --tone-info-line: #d3dce7;
+  --tone-neutral: #6b6459;
+  --tone-neutral-bg: #f0ebe2;
+  --tone-neutral-line: #e2dbcd;
 
-  /* Elevation — reserved for floating things; surfaces stay flat + hairline. */
-  --shadow-xs: 0 1px 2px 0 rgb(17 17 26 / 0.04);
-  --shadow-sm: 0 1px 2px 0 rgb(17 17 26 / 0.05), 0 1px 3px 0 rgb(17 17 26 / 0.05);
-  --shadow-md: 0 4px 12px -2px rgb(17 17 26 / 0.08), 0 2px 6px -2px rgb(17 17 26 / 0.05);
-  --shadow-lg: 0 16px 40px -12px rgb(17 17 26 / 0.22), 0 4px 12px -6px rgb(17 17 26 / 0.1);
+  /* Elevation — warm, minimal; borders do most of the separating. */
+  --shadow-xs: 0 1px 2px 0 rgb(41 37 32 / 0.05);
+  --shadow-sm: 0 1px 2px 0 rgb(41 37 32 / 0.05), 0 1px 3px 0 rgb(41 37 32 / 0.05);
+  --shadow-md: 0 6px 16px -6px rgb(41 37 32 / 0.12), 0 2px 6px -2px rgb(41 37 32 / 0.06);
+  --shadow-lg: 0 18px 44px -14px rgb(41 37 32 / 0.24), 0 6px 14px -8px rgb(41 37 32 / 0.1);
 
-  /* Radius --------------------------------------------------------------- */
+  /* Radius ----------------------------------------------------------------- */
   --radius-sm: 0.375rem;
   --radius: 0.5rem;
   --radius-md: 0.625rem;
@@ -71,64 +71,63 @@
   --radius-xl: 1rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
+/* Warm dark palette — NOT auto-applied; only via an explicit data-theme. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
 
-    --canvas: #0a0a0c;
-    --surface: #151518;
-    --surface-2: #1c1c20;
-    --surface-3: #26262c;
-    --overlay: rgb(0 0 0 / 0.6);
+  --canvas: #201d19;
+  --surface: #29251f;
+  --surface-2: #322d25;
+  --surface-3: #3d372d;
+  --overlay: rgb(15 12 9 / 0.62);
 
-    --fg: #ededf0;
-    --muted: #9a9aa4;
-    --subtle: #6a6a74;
-    --brand-fg: #ffffff;
+  --fg: #ece6dd;
+  --muted: #a59c8e;
+  --subtle: #766d60;
+  --brand-fg: #ffffff;
 
-    --line: #242429;
-    --line-strong: #34343b;
+  --line: #35302a;
+  --line-strong: #47402f;
 
-    --brand: #7d7bf4;
-    --brand-hover: #8f8dff;
-    --brand-active: #a5a3ff;
-    --brand-subtle: #1e1d33;
-    --brand-subtle-fg: #c8c6ff;
-    --ring: #8f8dff;
+  --brand: #d47b53;
+  --brand-hover: #e08d66;
+  --brand-active: #eaa17e;
+  --brand-subtle: #3a2820;
+  --brand-subtle-fg: #f1c6ab;
+  --ring: #e08d66;
 
-    --danger-solid: #e5484d;
-    --danger-solid-hover: #f2565b;
+  --danger-solid: #d9584c;
+  --danger-solid-hover: #e56a5e;
 
-    --tone-success: #4fca82;
-    --tone-success-bg: #0c2417;
-    --tone-success-line: #17492e;
-    --tone-warning: #f5b544;
-    --tone-warning-bg: #241a08;
-    --tone-warning-line: #55400f;
-    --tone-danger: #ff8a8a;
-    --tone-danger-bg: #2a1113;
-    --tone-danger-line: #602427;
-    --tone-info: #9a99ff;
-    --tone-info-bg: #17172e;
-    --tone-info-line: #302f5c;
-    --tone-neutral: #a0a0aa;
-    --tone-neutral-bg: #1c1c20;
-    --tone-neutral-line: #2e2e34;
+  --tone-success: #6fc389;
+  --tone-success-bg: #142a1c;
+  --tone-success-line: #275437;
+  --tone-warning: #e0a94a;
+  --tone-warning-bg: #2a2009;
+  --tone-warning-line: #5c471a;
+  --tone-danger: #f0968b;
+  --tone-danger-bg: #2c1512;
+  --tone-danger-line: #612b25;
+  --tone-info: #8fabc9;
+  --tone-info-bg: #16202b;
+  --tone-info-line: #2f4256;
+  --tone-neutral: #a79e90;
+  --tone-neutral-bg: #322d25;
+  --tone-neutral-line: #45403a;
 
-    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
-    --shadow-md: 0 6px 16px -4px rgb(0 0 0 / 0.6);
-    --shadow-lg: 0 20px 48px -16px rgb(0 0 0 / 0.75);
-  }
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-md: 0 8px 20px -6px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 24px 56px -18px rgb(0 0 0 / 0.75);
 }
 
-/* Expose the semantic layer to Tailwind. `inline` keeps the var() reference
-   live so `bg-surface`, `text-muted`, `border-line`, etc. follow the theme. */
+/* Expose the semantic layer to Tailwind. */
 @theme inline {
   --font-sans:
     var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+  --font-serif: var(--font-fraunces), Georgia, 'Times New Roman', serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
 
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -181,11 +180,10 @@
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.006em;
   }
-  /* Headings get slightly tighter tracking — a premium typographic tell. */
   h1,
   h2,
   h3 {
-    letter-spacing: -0.02em;
+    letter-spacing: -0.014em;
   }
   :focus-visible {
     outline: 2px solid var(--ring);
@@ -208,6 +206,13 @@
    Component utilities
    ========================================================================== */
 @layer components {
+  /* Editorial serif for the brand and major page/brand moments only. */
+  .font-display {
+    font-family: var(--font-serif);
+    font-weight: 500;
+    letter-spacing: -0.012em;
+  }
+
   .tone-success {
     color: var(--tone-success);
     background: var(--tone-success-bg);
@@ -238,12 +243,11 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Uppercase micro-label — section eyebrows, table heads, stat captions. */
   .eyebrow {
     font-size: 0.6875rem;
     line-height: 1rem;
     font-weight: 600;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
     color: var(--subtle);
   }
@@ -261,7 +265,7 @@
     background: linear-gradient(
       90deg,
       transparent,
-      color-mix(in srgb, var(--surface-3) 65%, transparent),
+      color-mix(in srgb, var(--surface-3) 60%, transparent),
       transparent
     );
     animation: skeleton-sweep 1.5s ease-in-out infinite;
