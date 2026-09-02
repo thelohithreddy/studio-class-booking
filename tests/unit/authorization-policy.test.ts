@@ -9,16 +9,20 @@ const staff: SessionUser = { id: 's', email: 's@x.test', name: 'S', role: 'STAFF
 const instructor: SessionUser = { id: 'i', email: 'i@x.test', name: 'I', role: 'INSTRUCTOR' }
 
 describe('capability policy', () => {
-  it('grants staff every capability and instructors none (full-table snapshot)', () => {
+  it('grants staff every capability; grants instructors ONLY attendance:settle', () => {
     for (const capability of CAPABILITIES) {
       expect(can(staff, capability)).toBe(true)
-      expect(can(instructor, capability)).toBe(false)
+      // Goal 1: an instructor records attendance ("who actually showed up") and
+      // nothing else at the role gate; every other management verb stays staff-only.
+      expect(can(instructor, capability)).toBe(capability === 'attendance:settle')
     }
   })
 
-  it('every capability is declared staff-only — Goal 1 denies instructors all management verbs', () => {
+  it('every capability is staff-only except attendance:settle (STAFF + INSTRUCTOR)', () => {
     for (const capability of CAPABILITIES) {
-      expect(CAPABILITY_ROLES[capability]).toEqual(['STAFF'])
+      expect(CAPABILITY_ROLES[capability]).toEqual(
+        capability === 'attendance:settle' ? ['STAFF', 'INSTRUCTOR'] : ['STAFF'],
+      )
     }
   })
 

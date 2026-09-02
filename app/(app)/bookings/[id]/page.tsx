@@ -123,16 +123,15 @@ export default function BookingDetailPage() {
                       </div>
                     </div>
                   </div>
-                  {staff ? (
-                    <BookingActions
-                      status={b.status}
-                      started={started}
-                      busy={busy}
-                      onSettle={(s) => settle.mutate(s)}
-                      onCancel={() => onCancel(b.member.name)}
-                      onAddNote={() => setNoteOpen(true)}
-                    />
-                  ) : null}
+                  <BookingActions
+                    staff={staff}
+                    status={b.status}
+                    started={started}
+                    busy={busy}
+                    onSettle={(s) => settle.mutate(s)}
+                    onCancel={() => onCancel(b.member.name)}
+                    onAddNote={() => setNoteOpen(true)}
+                  />
                 </div>
               </div>
 
@@ -189,6 +188,7 @@ export default function BookingDetailPage() {
 }
 
 function BookingActions({
+  staff,
   status,
   started,
   busy,
@@ -196,6 +196,7 @@ function BookingActions({
   onCancel,
   onAddNote,
 }: {
+  staff: boolean
   status: BookingDetail['status']
   started: boolean
   busy: boolean
@@ -203,8 +204,10 @@ function BookingActions({
   onCancel: () => void
   onAddNote: () => void
 }) {
+  // Instructors reach this page only for bookings on their own sessions, so they
+  // may record attendance; cancelling and notes remain staff-only.
   const canSettle = started && status === 'BOOKED'
-  const canCancel = status === 'BOOKED' || status === 'WAITLISTED'
+  const canCancel = staff && (status === 'BOOKED' || status === 'WAITLISTED')
   return (
     <div className="flex flex-wrap items-center gap-2">
       {canSettle ? (
@@ -222,9 +225,11 @@ function BookingActions({
           Cancel booking
         </Button>
       ) : null}
-      <Button variant="secondary" onClick={onAddNote} disabled={busy}>
-        Add note
-      </Button>
+      {staff ? (
+        <Button variant="secondary" onClick={onAddNote} disabled={busy}>
+          Add note
+        </Button>
+      ) : null}
     </div>
   )
 }
