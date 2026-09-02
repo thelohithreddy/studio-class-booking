@@ -111,7 +111,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   key={t.id}
                   role={t.tone === 'danger' ? 'alert' : 'status'}
                   className={cn(
-                    'anim-toast-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-lg border bg-surface px-4 py-3 shadow-lg',
+                    'anim-toast-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border bg-surface px-4 py-3 shadow-lg',
                   )}
                 >
                   <span className="mt-0.5" style={{ color: `var(--tone-${t.tone})` }}>

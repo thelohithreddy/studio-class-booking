@@ -9,9 +9,13 @@ import type { BookingStatus } from './types'
 
 export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
 
+/** Shape cues that make status legible without color. */
+export type StatusIcon = 'check' | 'clock' | 'dash' | 'cross' | 'alert' | 'dot'
+
 export interface StatusMeta {
   label: string
   tone: Tone
+  icon: StatusIcon
   /** One-line explanation, used in tooltips / result panels. */
   description: string
 }
@@ -20,26 +24,31 @@ export const BOOKING_STATUS: Record<BookingStatus, StatusMeta> = {
   BOOKED: {
     label: 'Booked',
     tone: 'info',
+    icon: 'check',
     description: 'Holds a confirmed spot in the session.',
   },
   WAITLISTED: {
     label: 'Waitlisted',
     tone: 'warning',
+    icon: 'clock',
     description: 'Not a confirmed spot — promoted automatically when one frees up.',
   },
   CANCELLED: {
     label: 'Cancelled',
     tone: 'neutral',
+    icon: 'dash',
     description: 'No longer holds a spot.',
   },
   ATTENDED: {
     label: 'Attended',
     tone: 'success',
+    icon: 'check',
     description: 'Marked present for the session.',
   },
   NO_SHOW: {
     label: 'No show',
     tone: 'danger',
+    icon: 'cross',
     description: 'Booked but did not attend.',
   },
 }
@@ -67,6 +76,7 @@ export function membershipFromDays(daysRemaining: number): MembershipMeta {
       state: 'expired',
       label: 'Expired',
       tone: 'danger',
+      icon: 'cross',
       description: 'Membership has lapsed — this member cannot make new bookings.',
     }
   }
@@ -75,6 +85,7 @@ export function membershipFromDays(daysRemaining: number): MembershipMeta {
       state: 'expiring',
       label: 'Expiring soon',
       tone: 'warning',
+      icon: 'alert',
       description: 'Membership expires within the next seven days.',
     }
   }
@@ -82,6 +93,7 @@ export function membershipFromDays(daysRemaining: number): MembershipMeta {
     state: 'active',
     label: 'Active',
     tone: 'success',
+    icon: 'check',
     description: 'Membership is current.',
   }
 }
@@ -131,7 +143,8 @@ export function classState(archivedAt: string | null): StatusMeta {
     ? {
         label: 'Archived',
         tone: 'neutral',
+        icon: 'dash',
         description: 'Hidden from default views; sessions preserved.',
       }
-    : { label: 'Active', tone: 'success', description: 'Visible and schedulable.' }
+    : { label: 'Active', tone: 'success', icon: 'dot', description: 'Visible and schedulable.' }
 }

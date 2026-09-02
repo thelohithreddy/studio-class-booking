@@ -147,7 +147,7 @@ export function Callout({
   return (
     <div
       role={role}
-      className={cn('rounded-md border px-3.5 py-3 text-sm', calloutTone[tone], className)}
+      className={cn('rounded-lg border px-3.5 py-3 text-sm', calloutTone[tone], className)}
     >
       {title ? <p className="font-semibold">{title}</p> : null}
       {children ? (

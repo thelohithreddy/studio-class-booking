@@ -63,9 +63,7 @@ function BrandMark() {
       </span>
       <span className="flex flex-col leading-none">
         <span className="text-[0.95rem] font-semibold tracking-tight text-fg">Cadence</span>
-        <span className="text-[0.65rem] font-medium tracking-wide text-subtle uppercase">
-          Studio Ops
-        </span>
+        <span className="eyebrow mt-px">Studio Operations</span>
       </span>
     </span>
   )
@@ -115,9 +113,7 @@ function NavLinks({
             aria-current={active ? 'page' : undefined}
             className={cn(
               'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              active
-                ? 'bg-brand-subtle text-brand-subtle-fg'
-                : 'text-muted hover:bg-surface-2 hover:text-fg',
+              active ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2 hover:text-fg',
             )}
           >
             <Icon className={cn('size-5 shrink-0', active ? 'text-brand' : 'text-subtle')} />
@@ -133,7 +129,7 @@ function NavLinks({
           className={cn(
             'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
             isActive(pathname, '/alerts')
-              ? 'bg-brand-subtle text-brand-subtle-fg'
+              ? 'bg-surface-2 text-fg'
               : 'text-muted hover:bg-surface-2 hover:text-fg',
           )}
         >
@@ -223,7 +219,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
   return (
     <div className="min-h-screen">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-surface px-3 py-4 lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-surface px-3 py-5 lg:flex">
         <div className="px-2 pb-5">
           <Link
             href="/"
@@ -296,7 +292,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
 
       {/* Main content */}
       <div className="lg:pl-60">
-        <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-9">
           <CurrentUserProvider user={user}>{children}</CurrentUserProvider>
         </main>
       </div>

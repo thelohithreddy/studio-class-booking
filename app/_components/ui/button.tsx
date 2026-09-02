@@ -10,23 +10,24 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'subtle'
 type Size = 'sm' | 'md' | 'lg'
 
 const base =
-  'inline-flex items-center justify-center gap-2 rounded-md font-medium whitespace-nowrap ' +
-  'transition-[background,box-shadow,transform,color] duration-100 select-none ' +
+  'inline-flex items-center justify-center gap-2 rounded-lg font-medium whitespace-nowrap ' +
+  'transition-[background,border-color,box-shadow,transform,color] duration-100 select-none ' +
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ' +
-  'disabled:pointer-events-none disabled:opacity-55 active:translate-y-px'
+  'disabled:pointer-events-none disabled:opacity-50 active:scale-[0.985]'
 
 const variants: Record<Variant, string> = {
   primary: 'bg-brand text-brand-fg shadow-xs hover:bg-brand-hover',
-  secondary: 'bg-surface text-fg border border-line-strong shadow-xs hover:bg-surface-2',
+  secondary:
+    'bg-surface text-fg border border-line-strong hover:bg-surface-2 hover:border-line-strong',
   subtle: 'bg-surface-2 text-fg hover:bg-surface-3',
   ghost: 'bg-transparent text-muted hover:bg-surface-2 hover:text-fg',
   danger: 'bg-[var(--danger-solid)] text-white shadow-xs hover:bg-[var(--danger-solid-hover)]',
 }
 
 const sizes: Record<Size, string> = {
-  sm: 'h-8 px-3 text-[0.8125rem]',
-  md: 'h-9 px-4 text-sm',
-  lg: 'h-11 px-5 text-[0.95rem]',
+  sm: 'h-8 gap-1.5 px-2.5 text-[0.8125rem]',
+  md: 'h-9 px-3.5 text-[0.875rem]',
+  lg: 'h-11 px-5 text-[0.9375rem]',
 }
 
 function Spinner() {
