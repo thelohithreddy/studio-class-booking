@@ -262,20 +262,28 @@ function Timeline({ events }: { events: BookingEvent[] }) {
       <span className="absolute top-1.5 bottom-1.5 left-[7px] w-px bg-line" aria-hidden="true" />
       {events.map((event) => {
         const { title, tone } = describeEvent(event)
+        const promoted =
+          event.type === 'STATUS_CHANGED' &&
+          event.fromStatus === 'WAITLISTED' &&
+          event.toStatus === 'BOOKED'
         return (
           <li key={event.id} className="relative">
             <span
-              className="absolute top-1 left-[-1.5rem] size-3.5 rounded-full border-2 border-[var(--surface)]"
+              className="absolute top-1 left-[-1.5rem] size-3.5 rounded-full border-2 border-surface"
               style={{ backgroundColor: eventDotTone[tone] }}
               aria-hidden="true"
             />
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-              <p className="text-sm font-medium text-fg">{title}</p>
+              <p className="text-sm font-medium text-fg">
+                {promoted ? 'Promoted to booked' : title}
+              </p>
               <time className="text-xs text-subtle" dateTime={event.createdAt}>
                 {formatDateTime(event.createdAt)}
               </time>
             </div>
-            <p className="text-xs text-muted">by {event.actor.name}</p>
+            <p className="text-xs text-muted">
+              {promoted ? 'Automatically promoted from the waitlist' : `by ${event.actor.name}`}
+            </p>
             {event.note ? (
               <p className="mt-1.5 rounded-md border border-line bg-surface-2 px-3 py-2 text-sm text-fg">
                 {event.note}

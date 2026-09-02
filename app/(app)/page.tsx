@@ -6,18 +6,27 @@ import { useRouter } from 'next/navigation'
 
 import { qk, useApiQuery } from '@app/_lib/query'
 import { useAlerts } from '@app/_lib/use-alerts'
-import { formatDateShort, pluralize } from '@app/_lib/format'
-import { BOOKING_STATUS, type Tone } from '@app/_lib/status'
+import {
+  formatDateShort,
+  formatDaysRemaining,
+  formatMembershipDate,
+  pluralize,
+} from '@app/_lib/format'
+import { BOOKING_STATUS, membershipFromDays, type Tone } from '@app/_lib/status'
 import { barHeightPercent, type DashboardDto } from '@/lib/dashboard-dto'
+import type { MembershipAlert, SessionListResponse } from '@app/_lib/types'
 import {
   AsyncBoundary,
+  Avatar,
   Card,
   CardBody,
   CardHeader,
   EmptyState,
   Skeleton,
+  StatusBadge,
 } from '@app/_components/ui'
-import { IconChart } from '@app/_components/icons'
+import { ScheduleRow } from '@app/_components/schedule'
+import { IconChart, IconMembers, IconSessions } from '@app/_components/icons'
 import { useIsStaff } from './_shell/user-context'
 
 export default function DashboardPage() {
@@ -26,6 +35,11 @@ export default function DashboardPage() {
   const [greeting] = useState(() => {
     const h = new Date().getHours()
     return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
+  })
+  const [dates] = useState(() => {
+    const key = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return { today: key(new Date()), tomorrow: key(new Date(Date.now() + 86_400_000)) }
   })
 
   // The dashboard is a studio-wide, staff-only view. Instructors get their
@@ -36,12 +50,17 @@ export default function DashboardPage() {
 
   const dashboard = useApiQuery<DashboardDto>(qk.dashboard, '/api/dashboard', { enabled: staff })
   const alerts = useAlerts(staff)
+  const today = useApiQuery<SessionListResponse>(
+    qk.sessions({ dash: 'today' }),
+    `/api/sessions?from=${dates.today}&to=${dates.tomorrow}&pageSize=50`,
+    { enabled: staff },
+  )
   const attention = alerts.data?.count ?? 0
 
   if (!staff) return null
 
   return (
-    <div className="flex flex-col gap-7">
+    <div className="flex flex-col gap-6">
       <AsyncBoundary query={dashboard} skeleton={<DashboardSkeleton />}>
         {(data) => (
           <>
@@ -66,7 +85,7 @@ export default function DashboardPage() {
               </p>
             </header>
 
-            {/* Metric strip — one panel, four cells (whitespace over boxes). */}
+            {/* Today metrics — one panel, four cells. */}
             <Card>
               <div className="grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
                 <Metric tone="info" label="Sessions today" value={data.headline.sessionsToday} />
@@ -90,6 +109,42 @@ export default function DashboardPage() {
               </div>
             </Card>
 
+            {/* Operational focus: today's schedule + what needs attention. */}
+            <div className="grid gap-5 lg:grid-cols-5">
+              <Card className="overflow-hidden lg:col-span-3">
+                <CardHeader
+                  title="Today's schedule"
+                  actions={
+                    <Link
+                      href="/sessions"
+                      className="text-[0.8125rem] font-medium text-brand hover:underline"
+                    >
+                      View schedule
+                    </Link>
+                  }
+                />
+                <TodaySchedule query={today} />
+              </Card>
+
+              <Card className="overflow-hidden lg:col-span-2">
+                <CardHeader
+                  title="Needs attention"
+                  actions={
+                    attention > 0 ? (
+                      <Link
+                        href="/alerts"
+                        className="text-[0.8125rem] font-medium text-brand hover:underline"
+                      >
+                        View all
+                      </Link>
+                    ) : undefined
+                  }
+                />
+                <NeedsAttention alerts={alerts.data?.alerts ?? []} loading={alerts.isPending} />
+              </Card>
+            </div>
+
+            {/* Activity. */}
             <div className="grid gap-5 lg:grid-cols-5">
               <Card className="lg:col-span-2">
                 <CardHeader title="Bookings by status" description="Across all bookings." />
@@ -97,7 +152,6 @@ export default function DashboardPage() {
                   <StatusBreakdown data={data.bookingsByStatus} />
                 </CardBody>
               </Card>
-
               <Card className="lg:col-span-3">
                 <CardHeader title="Attendance" description="Members attended, last 8 weeks." />
                 <CardBody>
@@ -116,6 +170,77 @@ export default function DashboardPage() {
         )}
       </AsyncBoundary>
     </div>
+  )
+}
+
+function TodaySchedule({ query }: { query: ReturnType<typeof useApiQuery<SessionListResponse>> }) {
+  return (
+    <AsyncBoundary
+      query={query}
+      skeleton={
+        <div className="p-4">
+          <Skeleton className="h-40 w-full" />
+        </div>
+      }
+      isEmpty={(d) => d.sessions.length === 0}
+      empty={
+        <EmptyState
+          icon={<IconSessions className="size-5" />}
+          title="No sessions today"
+          description="Your schedule is clear. Enjoy the quiet — or get ahead on next week."
+        />
+      }
+    >
+      {(data) => (
+        <div className="flex flex-col p-2">
+          {data.sessions.map((s) => (
+            <ScheduleRow key={s.id} session={s} />
+          ))}
+        </div>
+      )}
+    </AsyncBoundary>
+  )
+}
+
+function NeedsAttention({ alerts, loading }: { alerts: MembershipAlert[]; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="p-4">
+        <Skeleton className="h-40 w-full" />
+      </div>
+    )
+  }
+  if (alerts.length === 0) {
+    return (
+      <EmptyState
+        icon={<IconMembers className="size-5" />}
+        title="You're all caught up"
+        description="No memberships need attention right now."
+      />
+    )
+  }
+  return (
+    <ul className="divide-y divide-line">
+      {alerts.slice(0, 5).map((a) => {
+        const meta = membershipFromDays(a.daysRemaining)
+        return (
+          <li
+            key={`${a.memberId}-${a.membershipExpiresOn}`}
+            className="flex items-center gap-3 px-4 py-3"
+          >
+            <Avatar name={a.name} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[0.875rem] font-medium text-fg">{a.name}</p>
+              <p className="truncate text-xs text-muted">
+                {formatDaysRemaining(a.daysRemaining)} ·{' '}
+                {formatMembershipDate(a.membershipExpiresOn)}
+              </p>
+            </div>
+            <StatusBadge meta={meta} />
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -210,7 +335,6 @@ function AttendanceChart({ data }: { data: DashboardDto['attendanceByWeek'] }) {
           )
         })}
       </div>
-      {/* Accessible equivalent of the chart. */}
       <table className="sr-only">
         <caption>Attendance per week over the last eight weeks</caption>
         <thead>
@@ -275,14 +399,17 @@ function ClassBreakdown({ data }: { data: DashboardDto['bookingsByClass'] }) {
 
 function DashboardSkeleton() {
   return (
-    <div className="flex flex-col gap-7">
+    <div className="flex flex-col gap-6">
       <Skeleton className="h-12 w-72" />
       <Skeleton className="h-24 w-full rounded-xl" />
       <div className="grid gap-5 lg:grid-cols-5">
-        <Skeleton className="h-64 rounded-xl lg:col-span-2" />
         <Skeleton className="h-64 rounded-xl lg:col-span-3" />
+        <Skeleton className="h-64 rounded-xl lg:col-span-2" />
       </div>
-      <Skeleton className="h-48 w-full rounded-xl" />
+      <div className="grid gap-5 lg:grid-cols-5">
+        <Skeleton className="h-56 rounded-xl lg:col-span-2" />
+        <Skeleton className="h-56 rounded-xl lg:col-span-3" />
+      </div>
     </div>
   )
 }

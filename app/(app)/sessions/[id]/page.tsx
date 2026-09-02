@@ -181,7 +181,12 @@ export default function SessionDetailPage() {
                   <BookingCreateDrawer
                     open={booking}
                     onClose={() => setBooking(false)}
-                    fixedSession={{ id, label: sessionLabel }}
+                    fixedSession={{
+                      id,
+                      label: sessionLabel,
+                      capacity: s.capacity,
+                      bookedCount: s.bookedCount,
+                    }}
                   />
                 </>
               ) : null}

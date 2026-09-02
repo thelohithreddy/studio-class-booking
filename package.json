@@ -23,7 +23,8 @@
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "db:generate": "prisma generate",
-    "db:seed": "node scripts/seed-dev.mjs"
+    "db:seed": "node scripts/seed-dev.mjs",
+    "db:demo": "node scripts/demo-seed.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.0",
