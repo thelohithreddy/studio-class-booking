@@ -35,9 +35,44 @@ write-up in [docs/architecture.md](docs/architecture.md); decisions in
 pnpm install            # postinstall generates the Prisma client
 cp .env.example .env     # set DATABASE_URL to a local Postgres
 pnpm db:up               # start the docker Postgres (studio_dev)
-pnpm db:seed             # demo classes/sessions/members + demo accounts
-pnpm dev                 # http://localhost:3000
+pnpm db:seed             # static demo data: accounts, classes, rooms, members, sessions
+pnpm dev                 # http://localhost:3000  (leave running)
+pnpm db:demo             # in a second shell: rich data via the real API — bookings,
+                         # waitlist + promotion, attendance, a note, a co-instructor,
+                         # a recurring series (so the app is not an empty shell)
 ```
+
+**Two seeds, on purpose.** `db:seed` (`scripts/seed-dev.mjs`) writes the **static** entities
+directly to the DB (accounts `staff@studio.test` / `ivy@studio.test`, both with `SEED_PASSWORD`,
+default `studio123`), but deliberately creates **no bookings**. `db:demo` (`scripts/demo-seed.mjs`)
+then drives the **real HTTP API as staff** to create the booking/waitlist/attendance/recurring data —
+so every row obeys the actual booking rules, state machine, and immutable history. Both are
+**idempotent** (they no-op if data already exists) and never delete anything.
+
+### Provisioning production demo data
+
+The production seed is guarded and needs explicit operator intent (it must never run on
+`pnpm start` or a deploy). Run it once against the deployed environment:
+
+```bash
+# 1) Static accounts + entities — direct DB (needs the provider CA for verified TLS)
+ALLOW_SEED=true \
+DATABASE_URL="<prod pooled URL, sslmode=verify-full>" \
+DATABASE_CA_CERT="$(cat supabase-ca.crt)" \
+SEED_PASSWORD="<demo password>" \
+pnpm db:seed
+
+# 2) Rich booking data — via the deployed API (no DB access needed)
+ALLOW_REMOTE_SEED=true \
+DEMO_BASE="https://studio-class-booking.onrender.com" \
+SEED_PASSWORD="<same demo password>" \
+pnpm db:demo
+```
+
+Then set `ALLOW_DEMO_LOGIN=true` in the host's environment so the one-click **Explore as
+staff / instructor** buttons appear (they mint a session for the pre-seeded accounts server-side —
+no password reaches the browser). See [docs/decisions.md](docs/decisions.md) #35 for the TLS/CA
+requirement.
 
 ## Environment variables
 
