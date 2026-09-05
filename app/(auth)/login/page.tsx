@@ -81,7 +81,17 @@ export default async function LoginPage() {
           )}
         </div>
 
-        <p className="mt-6 text-center text-xs">
+        <p className="mt-4 text-center text-[0.8125rem] text-muted">
+          Need an account?{' '}
+          <Link
+            href="/signup"
+            className="font-medium text-brand-subtle-fg underline-offset-2 hover:underline"
+          >
+            Request access
+          </Link>
+        </p>
+
+        <p className="mt-4 text-center text-xs">
           <Link
             href="/"
             className="text-brand-subtle-fg underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
