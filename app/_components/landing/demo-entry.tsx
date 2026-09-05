@@ -54,7 +54,7 @@ export function DemoEntry() {
           {pending === 'INSTRUCTOR' ? 'Signing in…' : 'Explore as instructor'}
         </button>
       </div>
-      <p className="text-xs text-subtle">
+      <p className="text-xs text-muted">
         No credentials needed — demo entry signs you into a sample studio account.
       </p>
       {error ? (
