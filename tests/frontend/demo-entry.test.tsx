@@ -6,10 +6,10 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const replace = vi.fn()
+const push = vi.fn()
 const refresh = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace, refresh, push: vi.fn() }),
+  useRouter: () => ({ push, refresh, replace: vi.fn() }),
 }))
 
 import { DemoEntry } from '@app/_components/landing/demo-entry'
@@ -21,7 +21,7 @@ function mockFetch(ok: boolean, status = ok ? 204 : 404) {
 }
 
 beforeEach(() => {
-  replace.mockClear()
+  push.mockClear()
   refresh.mockClear()
 })
 afterEach(() => vi.restoreAllMocks())
@@ -32,7 +32,7 @@ describe('DemoEntry', () => {
     const user = userEvent.setup()
     render(<DemoEntry />)
     await user.click(screen.getByRole('button', { name: /explore as staff/i }))
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/dashboard'))
     expect(global.fetch).toHaveBeenCalledWith(
       '/api/auth/demo',
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ role: 'STAFF' }) }),
@@ -44,7 +44,7 @@ describe('DemoEntry', () => {
     const user = userEvent.setup()
     render(<DemoEntry />)
     await user.click(screen.getByRole('button', { name: /explore as instructor/i }))
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/sessions'))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/sessions'))
   })
 
   it('shows an error and does not redirect when demo access is unavailable', async () => {
@@ -53,6 +53,6 @@ describe('DemoEntry', () => {
     render(<DemoEntry />)
     await user.click(screen.getByRole('button', { name: /explore as staff/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/unavailable/i)
-    expect(replace).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
   })
 })

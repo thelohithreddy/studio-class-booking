@@ -31,9 +31,11 @@ export function LoginForm() {
     }).catch(() => null)
 
     if (response?.ok) {
-      // The (app) layout resolves the user; the dashboard bounces instructors to
-      // their scoped home, so this one target is correct for both roles.
-      router.replace('/dashboard')
+      // push (not replace) so the browser Back / two-finger swipe still works
+      // after entering the app; /login redirects an authenticated visitor onward,
+      // so Back lands in the app rather than on a stale form. The (app) layout
+      // resolves the user and bounces instructors to their scoped home.
+      router.push('/dashboard')
       router.refresh()
       return
     }

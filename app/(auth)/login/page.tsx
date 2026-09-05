@@ -1,5 +1,7 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
+import { currentUser } from '@/server/auth/current-user'
 import { demoLoginEnabled } from '@/server/auth/demo'
 import { DemoEntry } from '@app/_components/landing/demo-entry'
 import { LoginForm } from './login-form'
@@ -17,7 +19,12 @@ export const dynamic = 'force-dynamic'
 const SUBMISSION_URL =
   'https://github.com/thelohithreddy/studio-class-booking/blob/main/SUBMISSION.md'
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  // An already-signed-in visitor (e.g. swiping Back after login) goes straight
+  // to the app rather than seeing a stale sign-in form.
+  const user = await currentUser()
+  if (user) redirect(user.role === 'STAFF' ? '/dashboard' : '/sessions')
+
   const demo = demoLoginEnabled()
 
   return (
