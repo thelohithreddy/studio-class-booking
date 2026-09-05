@@ -7,11 +7,20 @@
 // product can be evaluated with meaningful data. Nothing is fabricated: every
 // row goes through the real booking rules, state machine, and history.
 //
-// Usage:  pnpm dev  (in one shell)  then  pnpm db:demo
-// SAFETY: talks only to http://localhost:3000. Never touches production.
+// Usage (local):  pnpm dev  (in one shell)  then  pnpm db:demo
+// Usage (deployed): ALLOW_REMOTE_SEED=true DEMO_BASE=<live-url> SEED_PASSWORD=<pw> pnpm db:demo
+//
+// SAFETY: defaults to http://localhost:3000. Targeting a deployed URL requires the
+// explicit ALLOW_REMOTE_SEED=true so it can never accidentally hit production. The
+// operation is idempotent (it no-ops if bookings already exist) and every row goes
+// through the REAL API — so all booking/capacity/waitlist/history invariants hold.
 const BASE = process.env.DEMO_BASE || 'http://localhost:3000'
-if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(BASE)) {
-  console.error(`Refusing to run demo seed against ${BASE} — localhost only.`)
+const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(BASE)
+if (!isLocal && process.env.ALLOW_REMOTE_SEED !== 'true') {
+  console.error(
+    `Refusing to run demo seed against ${BASE}. To seed a deployed URL deliberately,\n` +
+      `set ALLOW_REMOTE_SEED=true (and SEED_PASSWORD to the staff password used by the seed).`,
+  )
   process.exit(1)
 }
 

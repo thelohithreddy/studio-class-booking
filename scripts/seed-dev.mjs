@@ -16,23 +16,33 @@ import { hash } from '@node-rs/argon2'
 const { Client } = pg
 
 const DEFAULT_LOCAL = 'postgresql://studio:studio@localhost:5432/studio_dev?schema=public'
-const url = process.env.DATABASE_URL || DEFAULT_LOCAL
+const parsed = new URL(process.env.DATABASE_URL || DEFAULT_LOCAL)
 
-const host = new URL(url).hostname
-const isLocal = host === 'localhost' || host === '127.0.0.1'
+const host = parsed.hostname
+const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1'
 if (!isLocal && process.env.ALLOW_SEED !== 'true') {
   console.error(
-    `Refusing to seed a non-local database (${host}). This is a development seed.\n` +
-      `If you really mean to, set ALLOW_SEED=true — but never seed production.`,
+    `Refusing to seed a non-local database (${host}). This is a seed script.\n` +
+      `To seed a deployed database deliberately, set ALLOW_SEED=true (and, for a remote\n` +
+      `host, DATABASE_CA_CERT so TLS verifies). See README "Provisioning production demo data".`,
   )
   process.exit(1)
 }
+
+// TLS decided here, mirroring the app (src/lib/db.ts resolvePoolConfig): strip any
+// URL sslmode and verify remote certs (rejectUnauthorized) against the system store
+// or an explicit DATABASE_CA_CERT. Local Postgres (docker) speaks plaintext.
+for (const p of ['sslmode', 'ssl', 'sslrootcert', 'sslcert', 'sslkey', 'sslnegotiation']) {
+  parsed.searchParams.delete(p)
+}
+const ca = process.env.DATABASE_CA_CERT?.trim()
+const ssl = isLocal ? false : { rejectUnauthorized: true, ...(ca ? { ca } : {}) }
 
 // Matches src/server/auth/password.ts (OWASP argon2id minimums).
 const ARGON2_OPTIONS = { memoryCost: 19456, timeCost: 2, parallelism: 1 }
 const PASSWORD = process.env.SEED_PASSWORD || 'studio123'
 
-const db = new Client({ connectionString: url })
+const db = new Client({ connectionString: parsed.toString(), ssl })
 
 function isoDatePlusDays(days) {
   const d = new Date()
