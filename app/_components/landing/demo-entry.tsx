@@ -55,7 +55,7 @@ export function DemoEntry() {
         </button>
       </div>
       <p className="text-xs text-muted">
-        No credentials needed — demo entry signs you into a sample studio account.
+        No account needed — explore a pre-configured studio workspace.
       </p>
       {error ? (
         <p role="alert" className="text-xs font-medium text-[var(--tone-danger)]">
