@@ -171,6 +171,14 @@ export default async function LandingPage() {
                       >
                         Sign in
                       </Link>
+                      <span className="px-2 text-line-strong">·</span>
+                      New here?{' '}
+                      <Link
+                        href="/signup"
+                        className="font-medium text-brand-subtle-fg underline-offset-2 hover:underline"
+                      >
+                        Request access
+                      </Link>
                     </p>
                   </div>
                 ) : (
@@ -190,8 +198,14 @@ export default async function LandingPage() {
                       </a>
                     </div>
                     <p className="text-sm text-muted">
-                      No public sign-up — accounts are studio-provisioned. Evaluating? Demo access
-                      can be enabled, or use the credentials in{' '}
+                      No public sign-up — accounts are{' '}
+                      <Link
+                        href="/signup"
+                        className="font-medium text-brand-subtle-fg underline-offset-2 hover:underline"
+                      >
+                        studio-provisioned
+                      </Link>
+                      . Evaluating? Demo access can be enabled, or use the credentials in{' '}
                       <a
                         href="https://github.com/thelohithreddy/studio-class-booking/blob/main/SUBMISSION.md"
                         target="_blank"
@@ -417,6 +431,14 @@ export default async function LandingPage() {
                       className="font-medium text-brand-subtle-fg hover:underline"
                     >
                       Sign in
+                    </Link>
+                    <span className="px-2 text-line-strong">·</span>
+                    New here?{' '}
+                    <Link
+                      href="/signup"
+                      className="font-medium text-brand-subtle-fg hover:underline"
+                    >
+                      Request access
                     </Link>
                   </p>
                 </>

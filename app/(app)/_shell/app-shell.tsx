@@ -100,49 +100,58 @@ function NavLinks({
   onNavigate?: () => void
 }) {
   return (
-    <nav className="flex flex-col gap-0.5" aria-label="Primary">
-      {items.map((item) => {
-        const active = isActive(pathname, item.href)
-        const Icon = item.icon
-        return (
+    <>
+      <nav className="flex flex-col gap-0.5" aria-label="Primary">
+        {items.map((item) => {
+          const active = isActive(pathname, item.href)
+          const Icon = item.icon
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onNavigate}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                active ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2 hover:text-fg',
+              )}
+            >
+              <Icon className={cn('size-5 shrink-0', active ? 'text-brand' : 'text-subtle')} />
+              <span className="truncate">{item.label}</span>
+            </Link>
+          )
+        })}
+        {staff ? (
           <Link
-            key={item.href}
-            href={item.href}
+            href="/alerts"
             onClick={onNavigate}
-            aria-current={active ? 'page' : undefined}
+            aria-current={isActive(pathname, '/alerts') ? 'page' : undefined}
             className={cn(
               'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              active ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2 hover:text-fg',
+              isActive(pathname, '/alerts')
+                ? 'bg-surface-2 text-fg'
+                : 'text-muted hover:bg-surface-2 hover:text-fg',
             )}
           >
-            <Icon className={cn('size-5 shrink-0', active ? 'text-brand' : 'text-subtle')} />
-            <span className="truncate">{item.label}</span>
+            <IconAlerts
+              className={cn(
+                'size-5 shrink-0',
+                isActive(pathname, '/alerts') ? 'text-brand' : 'text-subtle',
+              )}
+            />
+            <span className="truncate">Alerts</span>
+            <AlertsNavBadge staff={staff} />
           </Link>
-        )
-      })}
-      {staff ? (
-        <Link
-          href="/alerts"
-          onClick={onNavigate}
-          aria-current={isActive(pathname, '/alerts') ? 'page' : undefined}
-          className={cn(
-            'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-            isActive(pathname, '/alerts')
-              ? 'bg-surface-2 text-fg'
-              : 'text-muted hover:bg-surface-2 hover:text-fg',
-          )}
-        >
-          <IconAlerts
-            className={cn(
-              'size-5 shrink-0',
-              isActive(pathname, '/alerts') ? 'text-brand' : 'text-subtle',
-            )}
-          />
-          <span className="truncate">Alerts</span>
-          <AlertsNavBadge staff={staff} />
-        </Link>
+        ) : null}
+      </nav>
+      {/* One valid destination is intentional, not unfinished: name the scope so
+          an instructor understands why the workspace is deliberately narrow. */}
+      {!staff ? (
+        <p className="mt-4 px-3 text-xs leading-relaxed text-subtle">
+          Your workspace shows sessions where you’re the primary or a co-instructor.
+        </p>
       ) : null}
-    </nav>
+    </>
   )
 }
 
@@ -156,23 +165,27 @@ function UserCard({
   signingOut: boolean
 }) {
   return (
-    <div className="flex items-center gap-3 border-t border-line px-2 pt-3">
-      <Avatar name={user.name} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-fg">{user.name}</p>
-        <p className="truncate text-xs text-muted">
-          {user.role === 'STAFF' ? 'Studio staff' : 'Instructor'}
-        </p>
+    <div className="border-t border-line pt-3">
+      <div className="flex items-center gap-3 px-2">
+        <Avatar name={user.name} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-fg">{user.name}</p>
+          <p className="truncate text-xs text-muted">
+            {user.role === 'STAFF' ? 'Studio staff' : 'Instructor'}
+          </p>
+        </div>
       </div>
+      {/* A clearly labelled control, not an ambiguous icon — the visible "Sign
+          out" text is the accessible name on desktop, mobile drawer, and screen
+          readers alike, with an explicit in-flight state. */}
       <button
         type="button"
         onClick={onSignOut}
         disabled={signingOut}
-        aria-label="Sign out"
-        title="Sign out"
-        className="rounded-md p-2 text-subtle hover:bg-surface-2 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-line px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
       >
-        <IconLogout className="size-5" />
+        <IconLogout className="size-4" aria-hidden="true" />
+        {signingOut ? 'Signing out…' : 'Sign out'}
       </button>
     </div>
   )
