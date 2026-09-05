@@ -21,9 +21,16 @@ On the home page, use the demo entry:
 - **“Explore as instructor”** → signs you in as an instructor and opens their scoped “My sessions”.
 
 Each button signs you into a pre-seeded sample account server-side; **no password is ever shown or
-required**. Sign out (top-left of the sidebar / user menu) to switch roles. The underlying demo
-accounts are `staff@studio.test` (staff) and `ivy@studio.test` (instructor) if you prefer the normal
-Sign-in form.
+required**. Sign out (top-left of the sidebar / user menu) to switch roles.
+
+**Prefer the normal Sign-in form?** Use these demo accounts at `/login`:
+
+| Role       | Email               | Password    |
+| ---------- | ------------------- | ----------- |
+| Staff      | `staff@studio.test` | `studio123` |
+| Instructor | `ivy@studio.test`   | `studio123` |
+
+(`studio123` is the seed default; if the deployment set a custom `SEED_PASSWORD`, use that instead.)
 
 ## Recommended evaluation journey
 
