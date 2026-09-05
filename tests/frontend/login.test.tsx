@@ -38,7 +38,7 @@ describe('LoginPage', () => {
     mockFetch(204)
     render(<LoginPage />)
     await fillAndSubmit()
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'))
   })
 
   it('shows a generic credentials error on 401 (no account enumeration)', async () => {
