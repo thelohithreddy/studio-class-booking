@@ -183,7 +183,7 @@ export default async function LandingPage() {
                         Sign in
                       </Link>
                       <a
-                        href="#product"
+                        href="#story"
                         className="inline-flex h-11 items-center justify-center rounded-lg border border-line-strong bg-surface px-6 text-sm font-semibold text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                       >
                         See it in action
@@ -218,14 +218,14 @@ export default async function LandingPage() {
               </ul>
             </div>
 
-            <div className="lg:pl-4" id="product">
+            <div className="lg:pl-4 scroll-mt-20" id="product">
               <ProductPreview />
             </div>
           </div>
         </section>
 
         {/* Booking / waitlist story */}
-        <section aria-labelledby="story-h" className="border-b border-line">
+        <section id="story" aria-labelledby="story-h" className="scroll-mt-20 border-b border-line">
           <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
             <div className="max-w-2xl">
               <p className="eyebrow text-muted">The hard part, handled</p>
@@ -244,7 +244,11 @@ export default async function LandingPage() {
         </section>
 
         {/* Roles + security boundary */}
-        <section id="roles" aria-labelledby="roles-h" className="border-b border-line bg-surface">
+        <section
+          id="roles"
+          aria-labelledby="roles-h"
+          className="scroll-mt-20 border-b border-line bg-surface"
+        >
           <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
             <div className="max-w-2xl">
               <p className="eyebrow text-muted">Two roles</p>
@@ -311,7 +315,11 @@ export default async function LandingPage() {
         </section>
 
         {/* Workflow */}
-        <section id="workflow" aria-labelledby="workflow-h" className="border-b border-line">
+        <section
+          id="workflow"
+          aria-labelledby="workflow-h"
+          className="scroll-mt-20 border-b border-line"
+        >
           <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
             <div className="max-w-2xl">
               <p className="eyebrow text-muted">The operating loop</p>
