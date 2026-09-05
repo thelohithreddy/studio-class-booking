@@ -6,10 +6,10 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const replace = vi.fn()
+const push = vi.fn()
 const refresh = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace, refresh, push: vi.fn() }),
+  useRouter: () => ({ push, refresh, replace: vi.fn() }),
 }))
 
 import { LoginForm } from '@app/(auth)/login/login-form'
@@ -28,7 +28,7 @@ async function fillAndSubmit() {
 }
 
 beforeEach(() => {
-  replace.mockClear()
+  push.mockClear()
   refresh.mockClear()
 })
 afterEach(() => vi.restoreAllMocks())
@@ -38,7 +38,7 @@ describe('LoginPage', () => {
     mockFetch(204)
     render(<LoginForm />)
     await fillAndSubmit()
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/dashboard'))
   })
 
   it('shows a generic credentials error on 401 (no account enumeration)', async () => {
@@ -46,7 +46,7 @@ describe('LoginPage', () => {
     render(<LoginForm />)
     await fillAndSubmit()
     expect(await screen.findByRole('alert')).toHaveTextContent(/don’t match|dont match|match/i)
-    expect(replace).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
   })
 
   it('shows a rate-limit message on 429', async () => {

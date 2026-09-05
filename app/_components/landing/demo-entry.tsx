@@ -26,7 +26,7 @@ export function DemoEntry() {
     }).catch(() => null)
 
     if (res?.ok) {
-      router.replace(role === 'STAFF' ? '/dashboard' : '/sessions')
+      router.push(role === 'STAFF' ? '/dashboard' : '/sessions')
       router.refresh()
       return
     }
