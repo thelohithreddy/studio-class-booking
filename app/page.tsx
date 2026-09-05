@@ -51,58 +51,6 @@ function Wordmark() {
   )
 }
 
-const CAPABILITY_GROUPS: {
-  eyebrow: string
-  icon: (p: { className?: string }) => React.ReactElement
-  lead: string
-  points: string[]
-}[] = [
-  {
-    eyebrow: 'Schedule',
-    icon: IconSessions,
-    lead: 'Put the week on the books.',
-    points: [
-      'Classes with default duration & capacity',
-      'Sessions placed into rooms',
-      'Recurring weekly series in one step',
-      'Room & instructor clashes refused',
-    ],
-  },
-  {
-    eyebrow: 'Book',
-    icon: IconBookings,
-    lead: 'Fill classes, keep the queue fair.',
-    points: [
-      'Book members up to capacity',
-      'FIFO waitlist beyond it',
-      'Automatic promotion on a cancel',
-      'Expired memberships blocked',
-    ],
-  },
-  {
-    eyebrow: 'Operate',
-    icon: IconClasses,
-    lead: 'Run the day, keep the record.',
-    points: [
-      'Attendance: attended / no-show',
-      'Primary + co-instructors',
-      'Immutable booking timeline',
-      'Membership-expiry alerts',
-    ],
-  },
-  {
-    eyebrow: 'Report',
-    icon: IconChart,
-    lead: 'See the studio at a glance.',
-    points: [
-      'Live studio dashboard',
-      'Server-side search, filter & sort',
-      'Attendance CSV export',
-      'Busiest classes & no-shows',
-    ],
-  },
-]
-
 const STAFF_CAN = [
   'Classes, sessions, rooms & members',
   'Create & cancel bookings',
@@ -213,7 +161,18 @@ export default async function LandingPage() {
                     Open the app
                   </Link>
                 ) : demo ? (
-                  <DemoEntry />
+                  <div className="flex flex-col gap-4">
+                    <DemoEntry />
+                    <p className="text-sm text-muted">
+                      Already have an account?{' '}
+                      <Link
+                        href="/login"
+                        className="font-medium text-brand-subtle-fg underline-offset-2 hover:underline"
+                      >
+                        Sign in
+                      </Link>
+                    </p>
+                  </div>
                 ) : (
                   <div className="flex flex-col gap-3">
                     <div className="flex flex-col gap-3 sm:flex-row">
@@ -231,7 +190,8 @@ export default async function LandingPage() {
                       </a>
                     </div>
                     <p className="text-sm text-muted">
-                      Evaluating? Demo credentials are in{' '}
+                      No public sign-up — accounts are studio-provisioned. Evaluating? Demo access
+                      can be enabled, or use the credentials in{' '}
                       <a
                         href="https://github.com/thelohithreddy/studio-class-booking/blob/main/SUBMISSION.md"
                         target="_blank"
@@ -260,37 +220,6 @@ export default async function LandingPage() {
 
             <div className="lg:pl-4" id="product">
               <ProductPreview />
-            </div>
-          </div>
-        </section>
-
-        {/* Capabilities grouped by workflow */}
-        <section aria-labelledby="cap-h" className="border-b border-line bg-surface">
-          <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
-            <div className="max-w-2xl">
-              <p className="eyebrow text-muted">What it does</p>
-              <h2 id="cap-h" className="font-display mt-3 text-[1.9rem] tracking-tight text-fg">
-                Four jobs, one back office.
-              </h2>
-            </div>
-            <div className="mt-10 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
-              {CAPABILITY_GROUPS.map(({ eyebrow, icon: Icon, lead, points }) => (
-                <div key={eyebrow} className="flex flex-col gap-3">
-                  <span className="flex size-9 items-center justify-center rounded-lg bg-brand-subtle text-brand-subtle-fg">
-                    <Icon className="size-5" />
-                  </span>
-                  <p className="eyebrow text-brand-subtle-fg">{eyebrow}</p>
-                  <h3 className="text-[0.95rem] font-semibold text-fg">{lead}</h3>
-                  <ul className="mt-1 flex flex-col gap-2">
-                    {points.map((p) => (
-                      <li key={p} className="flex items-start gap-2 text-[0.8125rem] text-muted">
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-muted" />
-                        <span>{p}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
             </div>
           </div>
         </section>
