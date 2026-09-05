@@ -12,7 +12,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace, refresh, push: vi.fn() }),
 }))
 
-import LoginPage from '@app/(auth)/login/page'
+import { LoginForm } from '@app/(auth)/login/login-form'
 
 function mockFetch(status: number, ok = status >= 200 && status < 300) {
   global.fetch = vi
@@ -36,14 +36,14 @@ afterEach(() => vi.restoreAllMocks())
 describe('LoginPage', () => {
   it('routes to the dashboard on a 204 success', async () => {
     mockFetch(204)
-    render(<LoginPage />)
+    render(<LoginForm />)
     await fillAndSubmit()
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'))
   })
 
   it('shows a generic credentials error on 401 (no account enumeration)', async () => {
     mockFetch(401)
-    render(<LoginPage />)
+    render(<LoginForm />)
     await fillAndSubmit()
     expect(await screen.findByRole('alert')).toHaveTextContent(/don’t match|dont match|match/i)
     expect(replace).not.toHaveBeenCalled()
@@ -51,7 +51,7 @@ describe('LoginPage', () => {
 
   it('shows a rate-limit message on 429', async () => {
     mockFetch(429)
-    render(<LoginPage />)
+    render(<LoginForm />)
     await fillAndSubmit()
     expect(await screen.findByRole('alert')).toHaveTextContent(/too many attempts/i)
   })
