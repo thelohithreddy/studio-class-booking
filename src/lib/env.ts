@@ -37,6 +37,13 @@ const envSchema = z.object({
         return false
       }
     }, 'STUDIO_TIMEZONE must be a valid IANA timezone (e.g. Europe/London)'),
+
+  // Opt-in, deployment-scoped flag for the one-click demo entry (POST
+  // /api/auth/demo). Off unless set to exactly "true": a real studio deployment
+  // leaves it unset and the demo endpoint 404s. Only ever mints a session for a
+  // fixed, pre-seeded demo account (see src/server/auth/demo.ts) — never an
+  // arbitrary user, never account creation.
+  ALLOW_DEMO_LOGIN: z.enum(['true', 'false']).optional(),
 })
 
 export type Env = z.infer<typeof envSchema>

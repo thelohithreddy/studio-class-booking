@@ -27,7 +27,7 @@ import {
 } from '@app/_components/ui'
 import { ScheduleRow } from '@app/_components/schedule'
 import { IconChart, IconMembers, IconSessions } from '@app/_components/icons'
-import { useIsStaff } from './_shell/user-context'
+import { useIsStaff } from '../_shell/user-context'
 
 export default function DashboardPage() {
   const staff = useIsStaff()

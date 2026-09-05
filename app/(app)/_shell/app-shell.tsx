@@ -32,7 +32,7 @@ interface NavItem {
 }
 
 const STAFF_NAV: NavItem[] = [
-  { href: '/', label: 'Dashboard', icon: IconDashboard },
+  { href: '/dashboard', label: 'Dashboard', icon: IconDashboard },
   { href: '/sessions', label: 'Sessions', icon: IconSessions },
   { href: '/bookings', label: 'Bookings', icon: IconBookings },
   { href: '/classes', label: 'Classes', icon: IconClasses },
@@ -42,7 +42,6 @@ const STAFF_NAV: NavItem[] = [
 const INSTRUCTOR_NAV: NavItem[] = [{ href: '/sessions', label: 'My sessions', icon: IconSessions }]
 
 function isActive(pathname: string, href: string): boolean {
-  if (href === '/') return pathname === '/'
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 
@@ -184,6 +183,9 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
   const router = useRouter()
   const staff = user.role === 'STAFF'
   const items = staff ? STAFF_NAV : INSTRUCTOR_NAV
+  // The brand returns to the caller's role home — staff to the studio dashboard,
+  // an instructor to their scoped sessions (the dashboard is staff-only).
+  const homeHref = staff ? '/dashboard' : '/sessions'
 
   const queryClient = useQueryClient()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -222,7 +224,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-surface px-3 py-5 lg:flex">
         <div className="px-2 pb-5">
           <Link
-            href="/"
+            href={homeHref}
             className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             <BrandMark />

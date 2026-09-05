@@ -1,3 +1,82 @@
+# Cadence — Studio Operations
+
+A production-grade class-operations and booking platform for a studio: staff schedule classes and
+sessions, book members with an automatic waitlist, record attendance, and watch a live dashboard,
+while instructors see only their own sessions. Built for the take-home brief preserved at the bottom
+of this file.
+
+**Live:** https://studio-class-booking.onrender.com · **Evaluator guide:** [SUBMISSION.md](SUBMISSION.md)
+
+## Evaluator access
+
+Open the live URL → on the landing page click **Explore as staff** or **Explore as instructor** — one
+click, no credentials. (Or use Sign in with the demo accounts noted in [SUBMISSION.md](SUBMISSION.md).)
+
+## Product overview
+
+- **Classes → Sessions → Bookings → Attendance → Reporting**, with capacity + FIFO waitlist and
+  automatic promotion on cancel, recurring session generation, co-instructors, membership alerts, an
+  immutable booking timeline, and a studio dashboard.
+- Two roles: **staff** run the studio; **instructors** see and record attendance only for their own
+  sessions. Every action is authorized server-side.
+
+## Architecture (short)
+
+One Next.js 16 app (App Router) serves both the UI and the `/api/*` route handlers, talking to
+PostgreSQL through Prisma 7 over a `pg` driver adapter. DB-backed opaque sessions (HttpOnly `__Host-`
+cookie, Argon2id), origin-checked CSRF, verify-full TLS. The core invariants (capacity, room/instructor
+overlap, one active booking per member+session, append-only history) live in the database. Full
+write-up in [docs/architecture.md](docs/architecture.md); decisions in
+[docs/decisions.md](docs/decisions.md); schema in [docs/schema.md](docs/schema.md).
+
+## Local setup
+
+```bash
+pnpm install            # postinstall generates the Prisma client
+cp .env.example .env     # set DATABASE_URL to a local Postgres
+pnpm db:up               # start the docker Postgres (studio_dev)
+pnpm db:seed             # demo classes/sessions/members + demo accounts
+pnpm dev                 # http://localhost:3000
+```
+
+## Environment variables
+
+| Name                | Required                                    | Purpose                                       |
+| ------------------- | ------------------------------------------- | --------------------------------------------- |
+| `DATABASE_URL`      | yes                                         | runtime pooled Postgres connection            |
+| `DIRECT_URL`        | migrations                                  | direct connection for `prisma migrate deploy` |
+| `DATABASE_CA_CERT`  | prod (if the DB provider uses a private CA) | PEM of the provider's CA                      |
+| `DATABASE_POOL_MAX` | no                                          | per-instance pool ceiling (default 10)        |
+| `STUDIO_TIMEZONE`   | no                                          | studio's IANA timezone (default UTC)          |
+| `ALLOW_DEMO_LOGIN`  | no                                          | `true` enables one-click evaluator entry      |
+| `TEST_DATABASE_URL` | tests only                                  | **never** set in production                   |
+
+## Authentication & roles
+
+Email/password sign-in mints an opaque, database-backed session (only its SHA-256 is stored) in an
+HttpOnly `__Host-` cookie; logout deletes the row. Every API route independently enforces auth and
+role — the UI shell only hides controls, it is never the boundary. **Staff** manage the whole studio;
+**instructors** see their own sessions and record attendance, nothing else.
+
+## Tests
+
+```bash
+pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
+```
+
+Unit + integration (against a real Postgres) + component tests. `pnpm db:up` must be running for the
+integration suite.
+
+## Production deployment
+
+Single **Render** web service (build `pnpm install --frozen-lockfile && pnpm build`, start
+`pnpm start`, health check `/api/health`), **Supabase** Postgres with `sslmode=verify-full` and
+`DATABASE_CA_CERT`. Details in [docs/architecture.md](docs/architecture.md) and decision #35.
+
+---
+
+_The original take-home brief follows._
+
 # Assignment 13 — Class Booking
 
 ## The scenario

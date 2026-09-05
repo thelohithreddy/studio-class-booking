@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
@@ -31,7 +32,9 @@ export default function LoginPage() {
     }).catch(() => null)
 
     if (response?.ok) {
-      router.replace('/')
+      // The (app) layout resolves the user; the dashboard bounces instructors to
+      // their scoped home, so this one target is correct for both roles.
+      router.replace('/dashboard')
       router.refresh()
       return
     }
@@ -110,6 +113,14 @@ export default function LoginPage() {
 
         <p className="mt-6 text-center text-xs text-subtle">
           Access is managed by your studio administrator.
+        </p>
+        <p className="mt-2 text-center text-xs">
+          <Link
+            href="/"
+            className="text-brand-subtle-fg underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            ← What is Cadence?
+          </Link>
         </p>
       </div>
     </main>
