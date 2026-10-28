@@ -9,16 +9,26 @@ import type { NextConfig } from 'next'
  * added here without doing the script-src/nonce work (the frontend phase's
  * job). HSTS applies only to production builds so localhost dev over http
  * stays usable.
+ *
+ * The P voice agent (decisions.md #36, loaded in app/layout.tsx) needs exactly
+ * two openings. It fetches only from its own origin, so connect-src gains that
+ * one origin and nothing wider. It records the visitor's voice, so the
+ * microphone is allowed for this origin only (`self`), which still keeps it
+ * from any embedded frame. When the nonce script-src lands it must allow
+ * P_API_ORIGIN for the script itself, and should allow blob: too: the widget's
+ * audio worklet loads from one, and without it the widget falls back to the
+ * older ScriptProcessor API.
  */
+const P_API_ORIGIN = 'https://p-api-bz2d.onrender.com'
+
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(self), geolocation=()' },
   {
     key: 'Content-Security-Policy',
-    value:
-      "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'",
+    value: `base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self' ${P_API_ORIGIN}`,
   },
   ...(process.env.NODE_ENV === 'production'
     ? [{ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' }]
