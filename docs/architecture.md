@@ -433,7 +433,9 @@ alert-dismiss` records `(member_id, current_expiry, staff_actor)` — the expiry
 - **Headers:** nosniff, DENY framing, referrer + permissions policies, HSTS (production
   builds only), and a minimal fallback-safe CSP (`base-uri`/`object-src`/`frame-ancestors`/
   `form-action`/`connect-src` — none of these cascade into script/style, so Next's inline
-  runtime is untouched). Full `script-src` + nonce CSP is deferred to the frontend phase;
+  runtime is untouched). `connect-src` and the microphone permission are opened for the P
+  voice agent only (its API origin; `microphone=(self)`) — decisions.md #36. Full
+  `script-src` + nonce CSP is deferred to the frontend phase;
   `__Host-` cookie prefix is documented-not-adopted (hosts sit on the Public Suffix List;
   revisit on a custom domain).
 

@@ -755,3 +755,29 @@ bookingScopeWhere(actor)] } })`). An out-of-scope id is therefore indistinguisha
 - **Not changed.** No authentication, authorization, booking-concurrency, schema, or UI change. The
   cookie flags, origin/CSRF guard, and X-Forwarded-For usage (secondary rate bucket only) were
   re-verified and left as-is.
+
+## Decision 36 — The P voice agent loads site-wide from P's own origin; only `connect-src` and the microphone open for it
+
+- **Chose:** P's install snippet, as `next/script` with `afterInteractive`, in the root layout. Every
+  page has the assistant, and it stays alive across client-side navigation instead of reloading
+  per route. Two header changes, each as narrow as the widget allows. `connect-src` adds
+  `https://p-api-bz2d.onrender.com`, because the widget sends every request to the origin it was
+  loaded from and nowhere else. `Permissions-Policy` goes from `microphone=()` to
+  `microphone=(self)`, which allows the top-level page and still denies the microphone to every
+  frame. Camera and geolocation stay off.
+- **Rejected:** Bundling or self-hosting `widget.js`. It works out its API address from its own
+  `src`, so a copy would send its requests to this app instead of to P.
+- **Trade-off accepted:** this is third-party code running in the app's own origin. To answer, it
+  sends P's server (and P's AI provider) a description of the visible page along with what the
+  visitor said. On staff pages that includes whatever member data is on screen: names, emails,
+  bookings. It can also click and fill anything the signed-in user can. It asks Yes/No before
+  anything that submits, books, saves or deletes, but that prompt is P's code, not ours. It never
+  sends passwords, card numbers or one-time codes. Any field or region marked `data-p-private`
+  is left out too, which is the lever if a page's member contact details shouldn't leave the app.
+  The key is public by design. P's allowed-websites list (currently
+  `studio-class-booking.onrender.com`) and P's per-visitor limits are what stop it being used
+  elsewhere, so on localhost the assistant stays hidden.
+- **Revisit when** the deferred `script-src` + nonce CSP lands: it must allow P's origin for the
+  script and should allow `blob:` for the widget's audio worklet (without it the widget falls back
+  to the older ScriptProcessor API). Moving the snippet to the `(app)` layout keeps the assistant
+  off the landing and sign-in pages, if that's ever wanted.
